@@ -32,7 +32,7 @@ def main(unused_argv):
   with open(FLAGS.rollout_path, 'rb') as fp:
     rollout_data = pickle.load(fp)
 
-  fig, ax = plt.subplots(1, 1, figsize=(12, 8))
+  fig, axs = plt.subplots(1, 2, figsize=(24, 8))
   skip = 10
   num_steps = rollout_data[0]['gt_velocity'].shape[0]
   num_frames = len(rollout_data) * num_steps // skip
@@ -47,17 +47,18 @@ def main(unused_argv):
   def animate(num):
     step = (num*skip) % num_steps
     traj = (num*skip) // num_steps
-    ax.cla()
-    ax.set_aspect('equal')
-    ax.set_axis_off()
-    vmin, vmax = bounds[traj]
-    pos = rollout_data[traj]['mesh_pos'][step]
-    faces = rollout_data[traj]['faces'][step]
-    velocity = rollout_data[traj]['pred_velocity'][step]
-    triang = mtri.Triangulation(pos[:, 0], pos[:, 1], faces)
-    ax.tripcolor(triang, velocity[:, 0], vmin=vmin[0], vmax=vmax[0])
-    ax.triplot(triang, 'ko-', ms=0.5, lw=0.3)
-    ax.set_title('Trajectory %d Step %d' % (traj, step))
+    for i, ax in enumerate(axs):
+      ax.cla()
+      ax.set_aspect('equal')
+      ax.set_axis_off()
+      vmin, vmax = bounds[traj]
+      pos = rollout_data[traj]['mesh_pos'][step]
+      faces = rollout_data[traj]['faces'][step]
+      velocity = rollout_data[traj][['gt_velocity','pred_velocity'][i]][step]
+      triang = mtri.Triangulation(pos[:, 0], pos[:, 1], faces)
+      ax.tripcolor(triang, velocity[:, 0], vmin=vmin[0], vmax=vmax[0])
+      ax.triplot(triang, 'ko-', ms=0.5, lw=0.3)
+      ax.set_title('Trajectory %d Step %d' % (traj, step))
     return fig,
 
   _ = animation.FuncAnimation(fig, animate, frames=num_frames, interval=100)

@@ -24,6 +24,7 @@ import numpy as np
 import tensorflow.compat.v1 as tf
 from meshgraphnets import cfd_eval
 from meshgraphnets import cfd_model
+from meshgraphnets import NPS_model
 from meshgraphnets import cloth_eval
 from meshgraphnets import cloth_model
 from meshgraphnets import core_model
@@ -33,7 +34,7 @@ from meshgraphnets import dataset
 FLAGS = flags.FLAGS
 flags.DEFINE_enum('mode', 'train', ['train', 'eval'],
                   'Train model, or run evaluation.')
-flags.DEFINE_enum('model', None, ['cfd', 'cloth'],
+flags.DEFINE_enum('model', None, ['cfd', 'cloth', 'NPS'],
                   'Select model to run.')
 flags.DEFINE_string('checkpoint_dir', None, 'Directory to save checkpoint')
 flags.DEFINE_string('dataset_dir', None, 'Directory to load dataset from.')
@@ -43,10 +44,14 @@ flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
 flags.DEFINE_integer('num_rollouts', 10, 'No. of rollout trajectories')
 flags.DEFINE_integer('num_training_steps', int(10e6), 'No. of training steps')
+flags.DEFINE_integer('dim', 2, 'NPS dimension')
+flags.DEFINE_integer('periodic', 0, 'NPS periodic boundary condition')
 
 PARAMETERS = {
     'cfd': dict(noise=0.02, gamma=1.0, field='velocity', history=False,
                 size=2, batch=2, model=cfd_model, evaluator=cfd_eval),
+    'NPS': dict(noise=0.02, gamma=1.0, field='field', history=False,
+                size=2, batch=2, model=NPS_model, evaluator=cfd_eval),
     'cloth': dict(noise=0.003, gamma=0.1, field='world_pos', history=True,
                   size=3, batch=1, model=cloth_model, evaluator=cloth_eval)
 }
