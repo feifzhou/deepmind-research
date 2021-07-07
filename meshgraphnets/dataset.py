@@ -48,7 +48,10 @@ def _parse(proto, meta):
 
 def load_dataset(path, split):
   """Load dataset."""
-  with open(os.path.join(path, 'meta.json'), 'r') as fp:
+  meta_file = os.path.join(path, split+'.json')
+  if not os.path.exists(meta_file):
+    meta_file = os.path.join(path, 'meta.json')
+  with open(meta_file, 'r') as fp:
     meta = json.loads(fp.read())
   ds = tf.data.TFRecordDataset(os.path.join(path, split+'.tfrecord'))
   ds = ds.map(functools.partial(_parse, meta=meta), num_parallel_calls=8)

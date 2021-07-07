@@ -26,7 +26,7 @@ import matplotlib.pyplot as plt
 
 FLAGS = flags.FLAGS
 flags.DEFINE_string('rollout_path', None, 'Path to rollout pickle file')
-flags.DEFINE_integer('skip', 10, 'skip timesteps between animation')
+flags.DEFINE_integer('skip', 1, 'skip timesteps between animation')
 
 
 def main(unused_argv):
