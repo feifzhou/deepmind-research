@@ -26,6 +26,7 @@ import matplotlib.pyplot as plt
 
 FLAGS = flags.FLAGS
 flags.DEFINE_string('rollout_path', None, 'Path to rollout pickle file')
+flags.DEFINE_integer('skip', 10, 'skip timesteps between animation')
 
 
 def main(unused_argv):
@@ -33,7 +34,7 @@ def main(unused_argv):
     rollout_data = pickle.load(fp)
 
   fig, axs = plt.subplots(1, 2, figsize=(24, 8))
-  skip = 10
+  skip = FLAGS.skip
   num_steps = rollout_data[0]['gt_velocity'].shape[0]
   num_frames = len(rollout_data) * num_steps // skip
 
