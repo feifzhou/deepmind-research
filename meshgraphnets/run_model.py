@@ -29,6 +29,7 @@ from meshgraphnets import cloth_eval
 from meshgraphnets import cloth_model
 from meshgraphnets import core_model
 from meshgraphnets import dataset
+# import horovod.tensorflow as hvd
 
 
 FLAGS = flags.FLAGS
@@ -45,12 +46,16 @@ flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
 flags.DEFINE_integer('num_rollouts', 10, 'No. of rollout trajectories')
 flags.DEFINE_integer('num_training_steps', int(10e6), 'No. of training steps')
 flags.DEFINE_integer('dim', 2, 'NPS dimension')
+flags.DEFINE_integer('nfeat_in', 1, 'nfeat_in')
+flags.DEFINE_integer('nfeat_out', -1, 'nfeat_out')
 flags.DEFINE_integer('periodic', 0, 'NPS periodic boundary condition')
+flags.DEFINE_integer('batch', 4, 'batch size')
+flags.DEFINE_float('lr', 1e-4, 'learning rate')
 
 PARAMETERS = {
     'cfd': dict(noise=0.02, gamma=1.0, field='velocity', history=False,
                 size=2, batch=2, model=cfd_model, evaluator=cfd_eval),
-    'NPS': dict(noise=0.02, gamma=1.0, field='field', history=False,
+    'NPS': dict(noise=0.02, gamma=1.0, field='velocity', history=False,
                 size=2, batch=2, model=NPS_model, evaluator=cfd_eval),
     'cloth': dict(noise=0.003, gamma=0.1, field='world_pos', history=True,
                   size=3, batch=1, model=cloth_model, evaluator=cloth_eval)
@@ -64,11 +69,12 @@ def learner(model, params):
   ds = dataset.split_and_preprocess(ds, noise_field=params['field'],
                                     noise_scale=params['noise'],
                                     noise_gamma=params['gamma'])
+  ds = dataset.batch_dataset(ds, FLAGS.batch)
   inputs = tf.data.make_one_shot_iterator(ds).get_next()
 
   loss_op = model.loss(inputs)
   global_step = tf.train.create_global_step()
-  lr = tf.train.exponential_decay(learning_rate=1e-4,
+  lr = tf.train.exponential_decay(learning_rate=FLAGS.lr,
                                   global_step=global_step,
                                   decay_steps=int(5e6),
                                   decay_rate=0.1) + 1e-6
@@ -122,11 +128,13 @@ def main(argv):
   tf.disable_eager_execution()
   params = PARAMETERS[FLAGS.model]
   learned_model = core_model.EncodeProcessDecode(
-      output_size=params['size'],
+      output_size=(params['size'] if FLAGS.nfeat_out<0 else FLAGS.nfeat_out),
       latent_size=128,
       num_layers=2,
       message_passing_steps=15)
-  model = params['model'].Model(learned_model)
+  model_kwargs = {'dim':FLAGS.dim, 'periodic':bool(FLAGS.periodic), 'nfeat_in':FLAGS.nfeat_in,
+    'nfeat_out':FLAGS.nfeat_in} if FLAGS.model=='NPS' else {}
+  model = params['model'].Model(learned_model, **model_kwargs)
   if FLAGS.mode == 'train':
     learner(model, params)
   elif FLAGS.mode == 'eval':

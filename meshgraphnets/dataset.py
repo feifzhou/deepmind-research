@@ -86,7 +86,7 @@ def split_and_preprocess(ds, noise_field, noise_scale, noise_gamma):
   ds = ds.map(add_noise, num_parallel_calls=8)
   ds = ds.shuffle(10000)
   ds = ds.repeat(None)
-  return ds.prefetch(10)
+  return ds.prefetch(tf.data.experimental.AUTOTUNE)
 
 
 def batch_dataset(ds, batch_size):
