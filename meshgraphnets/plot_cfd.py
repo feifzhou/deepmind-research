@@ -27,13 +27,20 @@ import matplotlib.pyplot as plt
 FLAGS = flags.FLAGS
 flags.DEFINE_string('rollout_path', None, 'Path to rollout pickle file')
 flags.DEFINE_integer('skip', 1, 'skip timesteps between animation')
+flags.DEFINE_boolean('mirrory', False, 'Make mirror plots to better see periodic boundary condition along y')
+flags.DEFINE_boolean('label', True, 'show label')
 
 
 def main(unused_argv):
   with open(FLAGS.rollout_path, 'rb') as fp:
     rollout_data = pickle.load(fp)
 
-  fig, axs = plt.subplots(1, 2, figsize=(24, 8))
+  if FLAGS.mirrory:
+    fig, axs = plt.subplots(2, 2, figsize=(16, 16))
+  else:
+    fig, axs = plt.subplots(1, 2, figsize=(16, 8))
+  axs = axs.flatten()
+  plt.subplots_adjust(0,0,0.95, 0.95, -0.08, -0.08)
   skip = FLAGS.skip
   num_steps = rollout_data[0]['gt_velocity'].shape[0]
   num_frames = len(rollout_data) * num_steps // skip
@@ -49,17 +56,19 @@ def main(unused_argv):
     step = (num*skip) % num_steps
     traj = (num*skip) // num_steps
     for i, ax in enumerate(axs):
+      col = i%2
       ax.cla()
       ax.set_aspect('equal')
       ax.set_axis_off()
       vmin, vmax = bounds[traj]
       pos = rollout_data[traj]['mesh_pos'][step]
       faces = rollout_data[traj]['faces'][step]
-      velocity = rollout_data[traj][['gt_velocity','pred_velocity'][i]][step]
+      velocity = rollout_data[traj][['gt_velocity','pred_velocity'][col]][step]
       triang = mtri.Triangulation(pos[:, 0], pos[:, 1], faces)
       ax.tripcolor(triang, velocity[:, 0], vmin=vmin[0], vmax=vmax[0])
       ax.triplot(triang, 'ko-', ms=0.5, lw=0.3)
-      ax.set_title('Trajectory %d Step %d' % (traj, step))
+      if FLAGS.label:
+        ax.set_title('%s traj %d step %d' % (['GT','PD'][col], traj, step))
     return fig,
 
   _ = animation.FuncAnimation(fig, animate, frames=num_frames, interval=100)
