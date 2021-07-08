@@ -51,6 +51,7 @@ flags.DEFINE_integer('nfeat_out', -1, 'nfeat_out')
 flags.DEFINE_integer('periodic', 0, 'NPS periodic boundary condition')
 flags.DEFINE_integer('batch', 4, 'batch size')
 flags.DEFINE_float('lr', 1e-4, 'learning rate')
+flags.DEFINE_integer('lr_decay', 5000000, help='Learning rate decay.')
 
 PARAMETERS = {
     'cfd': dict(noise=0.02, gamma=1.0, field='velocity', history=False,
@@ -76,7 +77,7 @@ def learner(model, params):
   global_step = tf.train.create_global_step()
   lr = tf.train.exponential_decay(learning_rate=FLAGS.lr,
                                   global_step=global_step,
-                                  decay_steps=int(5e6),
+                                  decay_steps=FLAGS.lr_decay,
                                   decay_rate=0.1) + 1e-6
   optimizer = tf.train.AdamOptimizer(learning_rate=lr)
   train_op = optimizer.minimize(loss_op, global_step=global_step)
