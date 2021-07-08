@@ -19,18 +19,25 @@ def cell2graph(a, grid_len, pbc=False):
     mesh_pos = np.stack(np.meshgrid(*xyz), axis=-1).reshape((-1, dim))
     node_type = np.zeros_like(mesh_pos[:,:1], dtype='int32')
     field = a.reshape((a.shape[0], -1, a.shape[-1])).astype('float32')
-    # print(f'debug dim {dim} mesh {mesh_pos} input a {a.shape}')
+    if pbc:
+        corner = mesh_pos
+    else:
+        corner = np.stack(np.meshgrid(*[np.arange(i-1) for i in shape]), axis=-1).reshape((-1, dim))
+    assert dim in (1, 2,3), f'ERROR dim should be 1, 2 or 3 but got {dim}'
     if dim == 2:
-        if pbc:
-            corner = mesh_pos
-        else:
-            corner = np.stack(np.meshgrid(*[np.arange(i-1) for i in shape]), axis=-1).reshape((-1, dim))
-        partitions = np.array([[[[0,0],[0,1],[1,0]],[[1,1],[0,1],[1,0]]], [[[0,0],[0,1],[1,1]],[[0,0],[1,0],[1,1]]]]) #itertools.combinations([[0,0],[0,1],[1,0],[1,1]], 3)
-        cells = np.array([ij + partitions[np.random.choice(len(partitions))] for ij in corner[:,None,None,:]]).reshape((-1, 3, dim))
-        cells = np.mod(cells, shape)
-        cells = np.dot(cells, [1, shape[0]]).astype('int32')
+        partitions = np.array([[[[0,0],[0,1],[1,0]],[[1,1],[0,1],[1,0]]], [[[0,0],[0,1],[1,1]],[[0,0],[1,0],[1,1]]]])
+    elif dim == 1:
+        partitions = np.array([[[[0],[1]]]])
+    elif dim == 3:
+        partitions = np.array([
+            [[0,0,0],[1,0,1],[0,1,1],[0,0,1]],[[0,0,0],[1,0,1],[1,1,0],[1,0,0]],
+            [[0,0,0],[0,1,1],[1,1,0],[0,1,0]],[[0,1,1],[1,0,1],[1,1,0],[1,1,1]]#,[[0,0,0],[1,0,1],[0,1,1],[1,1,0]]
+          ])
+        partitions = np.stack([partitions, np.abs(partitions-np.array([[[0,0,1]]]))], 0)
+    cells = np.array([ij + partitions[np.random.choice(len(partitions))] for ij in corner[:,None,None,:]]).reshape((-1, 3, dim))
+    cells = np.mod(cells, shape)
+    cells = np.dot(cells, np.cumprod((1,)+shape[:-1])).astype('int32')
     mesh_pos = (mesh_pos*(np.array(grid_len)[None,:])).astype('float32')
-    # print(f'debug cells {cells.shape} mesh {mesh_pos.shape} node {node_type.shape} field {field.shape}')
     return cells, mesh_pos, node_type, field
 
 def arr2tfrecord(arr, fname, verbose=True, dim=-1, grid_len=-1, periodic=False):
@@ -43,7 +50,6 @@ def arr2tfrecord(arr, fname, verbose=True, dim=-1, grid_len=-1, periodic=False):
         dtype_ = ndarray.dtype
         if dtype_ == np.float64 or dtype_ == np.float32:
             # return tf.train.Feature(float_list=tf.train.FloatList(value=ndarray.flatten()))
-            # print(f'debug', ndarray.tobytes())
             return tf.train.Feature(bytes_list=tf.train.BytesList(value=[ndarray.tobytes()]))
         elif dtype_ == np.int64 or dtype_ == np.int32:
             # return tf.train.Feature(int64_list=tf.train.Int64List(value=ndarray.flatten()))
