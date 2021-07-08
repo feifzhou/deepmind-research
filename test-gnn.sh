@@ -47,6 +47,6 @@ DAT=$HOME/data/grain
 for i in valid train test; do
     python meshgraphnets/npy2tfrecord.py $DAT/$i.npy -o $DAT/$i --periodic;
 done
-python -m meshgraphnets.run_model --model=NPS --mode=train --checkpoint_dir=$DIR --dataset_dir=$DAT --periodic=1 --nfeat_in=1 --nfeat_out=1 --num_training_steps=100000 --batch=8
+python -m meshgraphnets.run_model --model=NPS --mode=train --checkpoint_dir=$DIR --dataset_dir=$DAT --periodic=1 --nfeat_in=1 --nfeat_out=1 --num_training_steps=500000 --batch=8
 python -m meshgraphnets.run_model --model=NPS --mode=eval  --checkpoint_dir=$DIR --dataset_dir=$DAT --periodic=1 --nfeat_in=1 --nfeat_out=1 --rollout_split=test --rollout_path=$DIR/rollout.pkl --num_rollouts=1
-python -m meshgraphnets.plot_cfd --rollout_path=$DIR/rollout.pkl --skip=5
+python -m meshgraphnets.plot_cfd --rollout_path=$DIR/rollout.pkl --skip=5 --mirrory
