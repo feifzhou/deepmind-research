@@ -23,6 +23,7 @@ from absl import flags
 from matplotlib import animation
 from matplotlib import tri as mtri
 import matplotlib.pyplot as plt
+import numpy as np
 
 FLAGS = flags.FLAGS
 flags.DEFINE_string('rollout_path', None, 'Path to rollout pickle file')
@@ -52,6 +53,12 @@ def main(unused_argv):
     bb_max = trajectory['gt_velocity'].max(axis=(0, 1))
     bounds.append((bb_min, bb_max))
 
+  def remove_boundary_face(faces, pos, cutoff=2.0):
+    face_diameter = np.stack([np.linalg.norm(pos[faces[:,ij[0]]]-pos[faces[:,ij[1]]],axis=1) for ij in ((0,1),(1,2),(0,2))], -1)
+    face_diameter = np.max(face_diameter, axis=-1)
+    return faces[np.where(face_diameter<cutoff)]
+
+
   def animate(num):
     step = (num*skip) % num_steps
     traj = (num*skip) // num_steps
@@ -63,6 +70,7 @@ def main(unused_argv):
       vmin, vmax = bounds[traj]
       pos = rollout_data[traj]['mesh_pos'][step]
       faces = rollout_data[traj]['faces'][step]
+      faces = remove_boundary_face(faces, pos)
       velocity = rollout_data[traj][['gt_velocity','pred_velocity'][col]][step]
       triang = mtri.Triangulation(pos[:, 0], pos[:, 1], faces)
       ax.tripcolor(triang, velocity[:, 0], vmin=vmin[0], vmax=vmax[0])
