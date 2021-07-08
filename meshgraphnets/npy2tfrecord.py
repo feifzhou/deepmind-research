@@ -12,10 +12,10 @@ parser.add_argument('-o', default='output', help='output tfrecord file')
 args = parser.parse_args()
 
 
-def cell2graph(a, cell_len, pbc=False):
+def cell2graph(a, grid_len, pbc=False):
     shape = a.shape[1:-1]
     dim = len(shape)
-    xyz = [np.arange(shape[i]) for i,l in enumerate(cell_len)]
+    xyz = [np.arange(i) for i in shape]
     mesh_pos = np.stack(np.meshgrid(*xyz), axis=-1).reshape((-1, dim))
     node_type = np.zeros_like(mesh_pos[:,:1], dtype='int32')
     field = a.reshape((a.shape[0], -1, a.shape[-1])).astype('float32')
@@ -24,16 +24,16 @@ def cell2graph(a, cell_len, pbc=False):
         if pbc:
             corner = mesh_pos
         else:
-            corner = np.stack(np.meshgrid(*[np.arange(shape[i]-1) for i,l in enumerate(cell_len)]), axis=-1).reshape((-1, dim))
+            corner = np.stack(np.meshgrid(*[np.arange(i-1) for i in shape]), axis=-1).reshape((-1, dim))
         partitions = np.array([[[[0,0],[0,1],[1,0]],[[1,1],[0,1],[1,0]]], [[[0,0],[0,1],[1,1]],[[0,0],[1,0],[1,1]]]]) #itertools.combinations([[0,0],[0,1],[1,0],[1,1]], 3)
         cells = np.array([ij + partitions[np.random.choice(len(partitions))] for ij in corner[:,None,None,:]]).reshape((-1, 3, dim))
         cells = np.mod(cells, shape)
         cells = np.dot(cells, [1, shape[0]]).astype('int32')
-    mesh_pos = (mesh_pos/(np.array(cell_len)[None,:])).astype('float32')
+    mesh_pos = (mesh_pos*(np.array(grid_len)[None,:])).astype('float32')
     # print(f'debug cells {cells.shape} mesh {mesh_pos.shape} node {node_type.shape} field {field.shape}')
     return cells, mesh_pos, node_type, field
 
-def arr2tfrecord(arr, fname, verbose=True, dim=-1, cell_len=-1, periodic=False):
+def arr2tfrecord(arr, fname, verbose=True, dim=-1, grid_len=-1, periodic=False):
     """
     Converts a Numpy array a tfrecord file.
     """
@@ -60,8 +60,8 @@ def arr2tfrecord(arr, fname, verbose=True, dim=-1, cell_len=-1, periodic=False):
         dim = arr.ndim - 3
     assert (dim>=1) and (dim<=3), f'Invalid dimension {dim}'
     # length of the simulation cell
-    if cell_len == -1:
-        cell_len = arr.shape[2:2+dim]
+    if grid_len == -1:
+        grid_len = [1]*dim
     if arr.ndim == dim + 3:
         pass
     elif arr.ndim == dim + 2:
@@ -71,6 +71,8 @@ def arr2tfrecord(arr, fname, verbose=True, dim=-1, cell_len=-1, periodic=False):
 
     # write meta file
     meta_dict = {'trajectory_length': trajectory_length}
+    if periodic:
+        meta_dict['lattice'] = (np.diag(grid_len)*np.diag(arr.shape[2:-1])).tolist()
     meta_dict["field_names"] = [
         "cells",
         "mesh_pos",
@@ -105,7 +107,7 @@ def arr2tfrecord(arr, fname, verbose=True, dim=-1, cell_len=-1, periodic=False):
     # write tfrecord
     writer = tf.python_io.TFRecordWriter(f_out)
     for a in arr:
-        cells, mesh_pos, node_type, field = cell2graph(a, cell_len, pbc=periodic)
+        cells, mesh_pos, node_type, field = cell2graph(a, grid_len, pbc=periodic)
         example = tf.train.Example(features=tf.train.Features(feature={
             "cells": _dtype_feature(cells),
             "mesh_pos": _dtype_feature(mesh_pos),
@@ -119,4 +121,4 @@ def arr2tfrecord(arr, fname, verbose=True, dim=-1, cell_len=-1, periodic=False):
     if verbose:
         print(f"Writing {f_out} done!")
 
-arr2tfrecord(np.load(args.npy), args.o, verbose=True, cell_len=-1, periodic=False)
+arr2tfrecord(np.load(args.npy), args.o, verbose=True, grid_len=-1, periodic=args.periodic)

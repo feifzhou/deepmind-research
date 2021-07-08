@@ -132,9 +132,11 @@ def main(argv):
       latent_size=128,
       num_layers=2,
       message_passing_steps=15)
-  model_kwargs = {'dim':FLAGS.dim, 'periodic':bool(FLAGS.periodic), 'nfeat_in':FLAGS.nfeat_in,
-    'nfeat_out':FLAGS.nfeat_in} if FLAGS.model=='NPS' else {}
-  model = params['model'].Model(learned_model, **model_kwargs)
+  if FLAGS.model in ['NPS']:
+    model = params['model'].Model(learned_model, dim=FLAGS.dim, periodic=bool(FLAGS.periodic), nfeat_in=FLAGS.nfeat_in,
+    nfeat_out=FLAGS.nfeat_in)
+  else:
+    model = params['model'].Model(learned_model)
   if FLAGS.mode == 'train':
     learner(model, params)
   elif FLAGS.mode == 'eval':

@@ -43,6 +43,12 @@ def _parse(proto, meta):
     elif field['type'] != 'dynamic':
       raise ValueError('invalid data format')
     out[key] = data
+  if 'lattice' in meta:
+    import numpy as np
+    latt = np.array(meta['lattice'])
+    out['lattice'] = tf.tile(tf.constant(latt[None,...], dtype='float32'), [meta['trajectory_length'], 1, 1])
+    out['inv_lattice'] = tf.tile(tf.constant(np.linalg.inv(latt)[None,...], dtype='float32'), [meta['trajectory_length'], 1, 1])
+    # out['lattice'] = tf.tile(tf.constant(np.diag(latt)[None,None,...], dtype='float32'), [meta['trajectory_length'], 1, 1])
   return out
 
 
@@ -111,6 +117,8 @@ def batch_dataset(ds, batch_size):
         cells = tf.data.Dataset.zip((num_nodes, ds_val))
         initial = (tf.constant(0, tf.int32), initial)
         _, out[key] = cells.reduce(initial, renumber)
+      elif key in ['lattice', 'inv_lattice']:
+        out[key] = ds_val.reduce(initial, lambda prev, cur: cur)
       else:
         merge = lambda prev, cur: tf.concat([prev, cur], axis=0)
         out[key] = ds_val.reduce(initial, merge)

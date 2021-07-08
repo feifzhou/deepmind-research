@@ -24,6 +24,10 @@ from meshgraphnets import core_model
 from meshgraphnets import normalization
 
 
+def vector_pbc(vec, lattice, inv_lattice):
+  """ Convert an input vector to shortest image within periodic boundary condition """
+  return vec - tf.linalg.matmul(tf.math.round(tf.linalg.matmul(vec, inv_lattice)), lattice)
+
 class Model(snt.AbstractModule):
   """Model for fluid simulation."""
 
@@ -49,6 +53,11 @@ class Model(snt.AbstractModule):
     senders, receivers = common.triangles_to_edges(inputs['cells'])
     relative_mesh_pos = (tf.gather(inputs['mesh_pos'], senders) -
                          tf.gather(inputs['mesh_pos'], receivers))
+    # displacement vector under periodic boundary condition
+    if self.periodic:
+      # inputs['lattice']=tf.Print(inputs['lattice'], [tf.shape(inputs['lattice'])], message="debug The lat shapes are:")
+      relative_mesh_pos = vector_pbc(relative_mesh_pos, inputs['lattice'], inputs['inv_lattice'])
+      # relative_mesh_pos = relative_mesh_pos - tf.math.round(relative_mesh_pos/inputs['lattice'])*inputs['lattice']
     edge_features = tf.concat([
         relative_mesh_pos,
         tf.norm(relative_mesh_pos, axis=-1, keepdims=True)], axis=-1)
