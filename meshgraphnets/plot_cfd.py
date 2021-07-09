@@ -20,6 +20,7 @@ import pickle
 
 from absl import app
 from absl import flags
+import matplotlib
 from matplotlib import animation
 from matplotlib import tri as mtri
 import matplotlib.pyplot as plt
@@ -30,21 +31,38 @@ flags.DEFINE_string('rollout_path', None, 'Path to rollout pickle file')
 flags.DEFINE_integer('skip', 1, 'skip timesteps between animation')
 flags.DEFINE_boolean('mirrory', False, 'Make mirror plots to better see periodic boundary condition along y')
 flags.DEFINE_boolean('label', True, 'show label')
+flags.DEFINE_float('scale', 1.0, 'image scale WRT default')
+flags.DEFINE_string('o', '', 'save as gif')
 
+def run_animation(anim, fig):
+    anim_running = True
+
+    def onClick(event):
+        nonlocal anim_running
+        if anim_running:
+            anim.event_source.stop()
+            anim_running = False
+        else:
+            anim.event_source.start()
+            anim_running = True
+
+    fig.canvas.mpl_connect('button_press_event', onClick)
 
 def main(unused_argv):
+  if FLAGS.o: matplotlib.use('Agg')
   with open(FLAGS.rollout_path, 'rb') as fp:
     rollout_data = pickle.load(fp)
 
   if FLAGS.mirrory:
-    fig, axs = plt.subplots(2, 2, figsize=(16, 16))
+    fig, axs = plt.subplots(2, 2, figsize=(16*FLAGS.scale, 16*FLAGS.scale))
   else:
-    fig, axs = plt.subplots(1, 2, figsize=(16, 8))
+    fig, axs = plt.subplots(1, 2, figsize=(16*FLAGS.scale, 8*FLAGS.scale))
   axs = axs.flatten()
   plt.subplots_adjust(0,0,0.95, 0.95, -0.08, -0.08)
   skip = FLAGS.skip
   num_steps = rollout_data[0]['gt_velocity'].shape[0]
-  num_frames = len(rollout_data) * num_steps // skip
+  num_frames_per_rollout = (num_steps-1) // skip + 1
+  num_frames = len(rollout_data) * num_frames_per_rollout
 
   # compute bounds
   bounds = []
@@ -60,8 +78,8 @@ def main(unused_argv):
 
 
   def animate(num):
-    step = (num*skip) % num_steps
-    traj = (num*skip) // num_steps
+    step = (num%num_frames_per_rollout)*skip
+    traj = num//num_frames_per_rollout
     for i, ax in enumerate(axs):
       col = i%2
       ax.cla()
@@ -79,8 +97,12 @@ def main(unused_argv):
         ax.set_title('%s traj %d step %d' % (['GT','PD'][col], traj, step))
     return fig,
 
-  _ = animation.FuncAnimation(fig, animate, frames=num_frames, interval=100)
-  plt.show(block=True)
+  anim = animation.FuncAnimation(fig, animate, frames=num_frames, interval=100)
+  run_animation(anim, fig)
+  if FLAGS.o:
+      anim.save(FLAGS.o, writer='imagemagick', fps=6)
+  else:
+      plt.show(block=True)
 
 
 if __name__ == '__main__':
