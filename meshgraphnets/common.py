@@ -33,10 +33,16 @@ class NodeType(enum.IntEnum):
 
 def triangles_to_edges(faces):
   """Computes mesh edges from triangles."""
+  if faces.shape[-1] == 3:
   # collect edges from triangles
-  edges = tf.concat([faces[:, 0:2],
+    edges = tf.concat([faces[:, 0:2],
                      faces[:, 1:3],
                      tf.stack([faces[:, 2], faces[:, 0]], axis=1)], axis=0)
+  elif faces.shape[-1] == 2:
+  # collect edges from a SINGLE edge rather than triangle
+    edges = faces[:, 0:2]
+  else:
+    raise ValueError(f'ERROR triangles_to_edges expects 2 or 3 nodes per face')
   # those edges are sometimes duplicated (within the mesh) and sometimes
   # single (at the mesh boundary).
   # sort & pack edges as single tf.int64

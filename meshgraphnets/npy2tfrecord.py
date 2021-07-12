@@ -9,10 +9,11 @@ parser = argparse.ArgumentParser()
 parser.add_argument('npy', default=None, help='array')
 parser.add_argument('--periodic', action='store_true', default=False, help='Periodic boundary condition')
 parser.add_argument('-o', default='output', help='output tfrecord file')
+parser.add_argument('--typ', default='square_randomtriangle', help='type of mesh generation')
 args = parser.parse_args()
 
 
-def cell2graph(a, grid_len, pbc=False):
+def cell2graph(a, grid_len, typ, pbc=False):
     shape = a.shape[1:-1]
     dim = len(shape)
     xyz = [np.arange(i) for i in shape]
@@ -24,8 +25,21 @@ def cell2graph(a, grid_len, pbc=False):
     else:
         corner = np.stack(np.meshgrid(*[np.arange(i-1) for i in shape]), axis=-1).reshape((-1, dim))
     assert dim in (1, 2,3), f'ERROR dim should be 1, 2 or 3 but got {dim}'
+    get_partitions = lambda: partitions[np.random.choice(len(partitions))]
     if dim == 2:
         partitions = np.array([[[[0,0],[0,1],[1,0]],[[1,1],[0,1],[1,0]]], [[[0,0],[0,1],[1,1]],[[0,0],[1,0],[1,1]]]])
+        if typ=='square_randomtriangle':
+            pass
+        elif typ=='square_1-1':
+            get_partitions = lambda: partitions[0]
+        elif typ=='square_11':
+            get_partitions = lambda: partitions[1]
+        elif typ=='square_X':
+            partitions = np.concatenate(partitions)[None, :3] # first 3 triangles cover entire square
+        elif typ=='square_justNN':
+            partitions = np.array([[[[0,0],[1,0]],[[1,0],[1,1]],[[1,1],[0,1]],[[0,1],[0,0]]]])
+        else:
+            raise ValueError(f'ERROR type {typ} not recognized')
     elif dim == 1:
         partitions = np.array([[[[0],[1]]]])
     elif dim == 3:
@@ -34,13 +48,13 @@ def cell2graph(a, grid_len, pbc=False):
             [[0,0,0],[0,1,1],[1,1,0],[0,1,0]],[[0,1,1],[1,0,1],[1,1,0],[1,1,1]]#,[[0,0,0],[1,0,1],[0,1,1],[1,1,0]]
           ])
         partitions = np.stack([partitions, np.abs(partitions-np.array([[[0,0,1]]]))], 0)
-    cells = np.array([ij + partitions[np.random.choice(len(partitions))] for ij in corner[:,None,None,:]]).reshape((-1, 3, dim))
+    cells = np.concatenate([ij + get_partitions() for ij in corner[:,None,None,:]])
     cells = np.mod(cells, shape)
     cells = np.dot(cells, np.cumprod((1,)+shape[:-1])).astype('int32')
     mesh_pos = (mesh_pos*(np.array(grid_len)[None,:])).astype('float32')
     return cells, mesh_pos, node_type, field
 
-def arr2tfrecord(arr, fname, verbose=True, dim=-1, grid_len=-1, periodic=False):
+def arr2tfrecord(arr, fname, typ, verbose=True, dim=-1, grid_len=-1, periodic=False):
     """
     Converts a Numpy array a tfrecord file.
     """
@@ -88,7 +102,7 @@ def arr2tfrecord(arr, fname, verbose=True, dim=-1, grid_len=-1, periodic=False):
     meta_dict["features"] = {
         "cells": {
             "type": "static",
-            "shape": [1, -1, dim+1],
+            "shape": [1, -1, 2 if ('justNN' in typ) else dim+1],
             "dtype": "int32"
         },
         "mesh_pos": {
@@ -113,7 +127,7 @@ def arr2tfrecord(arr, fname, verbose=True, dim=-1, grid_len=-1, periodic=False):
     # write tfrecord
     writer = tf.python_io.TFRecordWriter(f_out)
     for a in arr:
-        cells, mesh_pos, node_type, field = cell2graph(a, grid_len, pbc=periodic)
+        cells, mesh_pos, node_type, field = cell2graph(a, grid_len, typ, pbc=periodic)
         example = tf.train.Example(features=tf.train.Features(feature={
             "cells": _dtype_feature(cells),
             "mesh_pos": _dtype_feature(mesh_pos),
@@ -127,4 +141,4 @@ def arr2tfrecord(arr, fname, verbose=True, dim=-1, grid_len=-1, periodic=False):
     if verbose:
         print(f"Writing {f_out} done!")
 
-arr2tfrecord(np.load(args.npy), args.o, verbose=True, grid_len=-1, periodic=args.periodic)
+arr2tfrecord(np.load(args.npy), args.o, args.typ, verbose=True, grid_len=-1, periodic=args.periodic)

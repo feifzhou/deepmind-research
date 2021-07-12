@@ -43,13 +43,48 @@ python -m meshgraphnets.plot_cfd --rollout_path=$DIR/rollout.pkl
 
 # grain growth
 DIR=meshgraphnets/experiment/grain
-DAT=$HOME/data/grain
 for i in valid train test; do
     python meshgraphnets/npy2tfrecord.py $DAT/$i.npy -o $DAT/$i --periodic;
 done
-python -m meshgraphnets.run_model --model=NPS --mode=train --checkpoint_dir=$DIR --dataset_dir=$DAT --periodic=1 --nfeat_in=1 --nfeat_out=1 --num_training_steps=500000 --batch=8
+python -m meshgraphnets.run_model --model=NPS --mode=train --checkpoint_dir=$DIR --dataset_dir=$DAT --periodic=1 --nfeat_in=1 --nfeat_out=1 --num_training_steps=500000 --batch=8 --lr=4e-4 --lr_decay=100000
 python -m meshgraphnets.run_model --model=NPS --mode=eval  --checkpoint_dir=$DIR --dataset_dir=$DAT --periodic=1 --nfeat_in=1 --nfeat_out=1 --rollout_split=test --rollout_path=$DIR/rollout.pkl --num_rollouts=1
 python -m meshgraphnets.plot_cfd --rollout_path=$DIR/rollout.pkl --skip=5 --mirrory
 python -m meshgraphnets.plot_cfd --rollout_path=$DIR/rollout.pkl --skip=98 -o GNN-grain.gif --scale=0.5
+################# tests, dilation tests, hyper parameters
+base_cmd="python -m meshgraphnets.run_model --model=NPS --mode=train --periodic=1 --nfeat_in=1 --nfeat_out=1 --num_training_steps=200000 --batch=8 --lr=4e-4 --lr_decay=100000"
+## noise vs no noise
+device=0
+for noise in 0 0.005 0.02 0.04; do
+    tag=grain-noise_${noise}
+    DIR=meshgraphnets/experiment/$tag
+    mkdir -p $DIR
+    echo $base_cmd --noise=$noise > $DIR/command-line.txt
+    CUDA_VISIBLE_DEVICES=$device nohup $base_cmd --checkpoint_dir=$DIR  --dataset_dir=$DAT --noise=$noise &> $DIR/log &
+    device=$((device+1))
+done
+## random triangle vs ordered triangle vs no-diagonal vs all diagonal
+device=0
+noise=0.02
+for tri in 'square_1-1' 'square_11' 'square_X' 'square_justNN'; do
+    tag=grain-noise_${noise}_tri_${tri}
+    DIR=meshgraphnets/experiment/$tag
+    DAT=$HOME/data/grain/$tri
+    mkdir -p $DIR $DAT
+    for i in valid train test; do
+        python meshgraphnets/npy2tfrecord.py $DAT/../$i.npy -o $DAT/$i --periodic --typ=$tri;
+    done
+    echo $base_cmd --checkpoint_dir=$DIR  --dataset_dir=$DAT --noise=$noise > $DIR/command-line.txt
+    CUDA_VISIBLE_DEVICES=$device nohup $base_cmd --checkpoint_dir=$DIR  --dataset_dir=$DAT --noise=$noise &> $DIR/log &
+    device=$((device+1))
+done
+(cd meshgraphnets/experiment/; for i in grain*/log; do echo -n '"< grep Loss '$i'" u 8 w l t "'$i'",'; done |sed 's/^/set logscale y; set yrange [0.001:0.1]; set xlabel "step"\nset ylabel "loss"\nplot /;s/,$/\npause 99\n/' | gnuplot)
+for tri in square_randomtriangle 'square_1-1' 'square_11' 'square_X' 'square_justNN'; do
+    DAT=$HOME/data/grain/$tri
+    for DIR in meshgraphnets/experiment/grain*/; do
+        echo $tri $DIR
+        python -m meshgraphnets.run_model --model=NPS --mode=eval --checkpoint_dir=$DIR --dataset_dir=$DAT --periodic=1 --nfeat_in=1 --nfeat_out=1 --rollout_split=test --rollout_path=$DIR/$tri.pkl --num_rollouts=20
+    done
+done > all-grain-test.txt
+#################
 
 

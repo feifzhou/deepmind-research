@@ -48,6 +48,10 @@ flags.DEFINE_integer('num_training_steps', int(10e6), 'No. of training steps')
 flags.DEFINE_integer('dim', 2, 'NPS dimension')
 flags.DEFINE_integer('nfeat_in', 1, 'nfeat_in')
 flags.DEFINE_integer('nfeat_out', -1, 'nfeat_out')
+flags.DEFINE_integer('nfeat_latent', 128, 'nfeat_latent in GNN')
+flags.DEFINE_integer('n_mpassing', 15, 'num. of message passing')
+flags.DEFINE_integer('nlayer_mlp', 2, 'No. of layer in MLP')
+flags.DEFINE_float('noise', -1.0, 'noise magnitude')
 flags.DEFINE_integer('periodic', 0, 'NPS periodic boundary condition')
 flags.DEFINE_integer('batch', 4, 'batch size')
 flags.DEFINE_float('lr', 1e-4, 'learning rate')
@@ -68,7 +72,7 @@ def learner(model, params):
   ds = dataset.load_dataset(FLAGS.dataset_dir, 'train')
   ds = dataset.add_targets(ds, [params['field']], add_history=params['history'])
   ds = dataset.split_and_preprocess(ds, noise_field=params['field'],
-                                    noise_scale=params['noise'],
+                                    noise_scale=params['noise'] if FLAGS.noise<0 else FLAGS.noise,
                                     noise_gamma=params['gamma'])
   ds = dataset.batch_dataset(ds, FLAGS.batch)
   inputs = tf.data.make_one_shot_iterator(ds).get_next()
@@ -96,11 +100,12 @@ def learner(model, params):
       if step % 1000 == 0:
         logging.info('Step %d: Loss %g', step, loss)
     logging.info('Training complete.')
+  evaluator(model, params, 'eval', None)
 
 
-def evaluator(model, params):
+def evaluator(model, params, data_name, rollout_path):
   """Run a model rollout trajectory."""
-  ds = dataset.load_dataset(FLAGS.dataset_dir, FLAGS.rollout_split)
+  ds = dataset.load_dataset(FLAGS.dataset_dir, data_name)
   ds = dataset.add_targets(ds, [params['field']], add_history=params['history'])
   inputs = tf.data.make_one_shot_iterator(ds).get_next()
   scalar_op, traj_ops = params['evaluator'].evaluate(model, inputs)
@@ -112,15 +117,23 @@ def evaluator(model, params):
       save_checkpoint_steps=None) as sess:
     trajectories = []
     scalars = []
+    mse_list = []
     for traj_idx in range(FLAGS.num_rollouts):
       logging.info('Rollout trajectory %d', traj_idx)
       scalar_data, traj_data = sess.run([scalar_op, traj_ops])
       trajectories.append(traj_data)
+      error = traj_data['pred_velocity'] - traj_data['gt_velocity']
+      mse_list.append((error**2).mean(axis=1))
       scalars.append(scalar_data)
     for key in scalars[0]:
       logging.info('%s: %g', key, np.mean([x[key] for x in scalars]))
-    with open(FLAGS.rollout_path, 'wb') as fp:
-      pickle.dump(trajectories, fp)
+    print(f'RMSE   total {np.sqrt(np.mean(mse_list))}')
+    print(f' per_channel {np.sqrt(np.mean(mse_list,axis=(0,1)))}')
+    print(f'    per_step {np.sqrt(np.mean(mse_list,axis=(0,2)))}')
+    print(f'    per_traj {np.sqrt(np.mean(mse_list,axis=(1,2)))}')
+    if rollout_path:
+      with open(rollout_path, 'wb') as fp:
+        pickle.dump(trajectories, fp)
 
 
 def main(argv):
@@ -128,20 +141,21 @@ def main(argv):
   tf.enable_resource_variables()
   tf.disable_eager_execution()
   params = PARAMETERS[FLAGS.model]
+  nfeat_out = params['size'] if FLAGS.nfeat_out<0 else FLAGS.nfeat_out
   learned_model = core_model.EncodeProcessDecode(
-      output_size=(params['size'] if FLAGS.nfeat_out<0 else FLAGS.nfeat_out),
-      latent_size=128,
-      num_layers=2,
-      message_passing_steps=15)
+      output_size=nfeat_out,
+      latent_size=FLAGS.nfeat_latent,
+      num_layers=FLAGS.nlayer_mlp,
+      message_passing_steps=FLAGS.n_mpassing)
   if FLAGS.model in ['NPS']:
     model = params['model'].Model(learned_model, dim=FLAGS.dim, periodic=bool(FLAGS.periodic), nfeat_in=FLAGS.nfeat_in,
-    nfeat_out=FLAGS.nfeat_in)
+    nfeat_out=nfeat_out)
   else:
     model = params['model'].Model(learned_model)
   if FLAGS.mode == 'train':
     learner(model, params)
   elif FLAGS.mode == 'eval':
-    evaluator(model, params)
+    evaluator(model, params, FLAGS.rollout_split, FLAGS.rollout_path)
 
 if __name__ == '__main__':
   app.run(main)
