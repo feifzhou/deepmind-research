@@ -35,7 +35,7 @@ def cell2graph(a, grid_len, typ, pbc=False):
         elif typ=='square_11':
             get_partitions = lambda: partitions[1]
         elif typ=='square_X':
-            partitions = np.concatenate(partitions)[None, :3] # first 3 triangles cover entire square
+            partitions = np.array([[[[0,0],[1,0]],[[1,0],[1,1]],[[1,1],[0,1]],[[0,1],[0,0]],[[0,0],[1,1]],[[0,1],[1,0]]]])
         elif typ=='square_justNN':
             partitions = np.array([[[[0,0],[1,0]],[[1,0],[1,1]],[[1,1],[0,1]],[[0,1],[0,0]]]])
         else:

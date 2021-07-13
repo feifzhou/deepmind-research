@@ -100,7 +100,7 @@ def learner(model, params):
       if step % 1000 == 0:
         logging.info('Step %d: Loss %g', step, loss)
     logging.info('Training complete.')
-  evaluator(model, params, 'eval', None)
+  evaluator(model, params, 'valid', None)
 
 
 def evaluator(model, params, data_name, rollout_path):
