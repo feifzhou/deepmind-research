@@ -9,6 +9,27 @@ python -m $DIR.train \
     --output_path=$DIR/experiments/WaterRamps/rollouts \
     --batch_size=14 --lr_decay=100000
 
+############ Si nanoparticle
+DAT=learning_to_simulate/data/nano-Si
+DIR=learning_to_simulate/experiments/nano-Si
+# data
+(cd ../ising-gpu/MD/nano-Si/
+for i in `seq 4`; do
+    T=`shuf -i 800-1200 -n 1`;
+    CUDA_VISIBLE_DEVICES=3 lmp_lassen_llnl -k on g 1 -sf kk  -i <(sed "s/t equal 2000.0/t equal $T/" in.Si)
+    mv dump.xy dump.xy-$i
+done
+python learning_to_simulate/particle2tfrecord.py ../ising-gpu/MD/nano-Si/dump.xy-* -o $DAT/train
+# train
+python -m learning_to_simulate.train \
+    --data_path=$DAT --model_path=$DIR --output_path=$DIR \
+    --batch_size=24 --lr_decay=100000 --lr=1e-3
+# rollout
+python -m learning_to_simulate.train --mode=eval_rollout \
+    --data_path=$DAT --model_path=$DIR --output_path=$DIR
+# render
+python learning_to_simulate/render_3d.py  --rollout_path=$DIR/rollout_test_0.pkl
+
 
 # cloth
 python -m meshgraphnets.run_model --model=cloth --mode=train \
@@ -43,6 +64,7 @@ python -m meshgraphnets.plot_cfd --rollout_path=$DIR/rollout.pkl
 
 # grain growth
 DIR=meshgraphnets/experiment/grain
+DAT=$HOME/data/grain
 for i in valid train test; do
     python meshgraphnets/npy2tfrecord.py $DAT/$i.npy -o $DAT/$i --periodic;
 done
@@ -82,7 +104,7 @@ for tri in square_randomtriangle 'square_1-1' 'square_11' 'square_X' 'square_jus
     DAT=$HOME/data/grain/$tri
     for DIR in meshgraphnets/experiment/grain*/; do
         echo $tri $DIR
-        python -m meshgraphnets.run_model --model=NPS --mode=eval --checkpoint_dir=$DIR --dataset_dir=$DAT --periodic=1 --nfeat_in=1 --nfeat_out=1 --rollout_split=test --rollout_path=$DIR/$tri.pkl --num_rollouts=20
+        CUDA_VISIBLE_DEVICES=1 python -m meshgraphnets.run_model --model=NPS --mode=eval --checkpoint_dir=$DIR --dataset_dir=$DAT --periodic=1 --nfeat_in=1 --nfeat_out=1 --rollout_split=test --rollout_path=$DIR/$tri.pkl --num_rollouts=20
     done
 done > all-grain-test.txt
 #################

@@ -207,6 +207,7 @@ def get_input_fn(data_path, batch_size, mode, split):
         ds = ds.shuffle(512)
       # Custom batching on the leading axis.
       ds = batch_concat(ds, batch_size)
+      ds = ds.prefetch(buffer_size=tf.data.experimental.AUTOTUNE)
     elif mode == 'rollout':
       # Rollout evaluation only available for batch size 1
       assert batch_size == 1
