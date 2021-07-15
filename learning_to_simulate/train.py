@@ -62,7 +62,9 @@ flags.DEFINE_string('model_path', None,
                           'Defaults to a temporary directory.'))
 flags.DEFINE_string('output_path', None,
                     help='The path for saving outputs (e.g. rollouts).')
-
+flags.DEFINE_float('lr', 1e-4, help='Learning rate.')
+flags.DEFINE_integer('lr_decay', 5000000, help='Learning rate.')
+flags.DEFINE_integer('in_seq_len', 6, help='INPUT_SEQUENCE_LENGTH rate.')
 
 FLAGS = flags.FLAGS
 
@@ -185,7 +187,7 @@ def get_input_fn(data_path, batch_size, mode, split):
   def input_fn():
     """Input function for learning simulation."""
     # Loads the metadata of the dataset.
-    metadata = _read_metadata(data_path)
+    metadata = _read_metadata(data_path, split)
     # Create a tf.data.Dataset from the TFRecord.
     ds = tf.data.TFRecordDataset([os.path.join(data_path, f'{split}.tfrecord')])
     ds = ds.map(functools.partial(
@@ -350,9 +352,9 @@ def get_one_step_estimator_fn(data_path,
     global_step = tf.train.get_global_step()
     # Set learning rate to decay from 1e-4 to 1e-6 exponentially.
     min_lr = 1e-6
-    lr = tf.train.exponential_decay(learning_rate=1e-4 - min_lr,
+    lr = tf.train.exponential_decay(learning_rate= FLAGS.lr,
                                     global_step=global_step,
-                                    decay_steps=int(5e6),
+                                    decay_steps=FLAGS.lr_decay,
                                     decay_rate=0.1) + min_lr
     opt = tf.train.AdamOptimizer(learning_rate=lr)
     train_op = opt.minimize(loss, global_step)
@@ -389,7 +391,7 @@ def get_rollout_estimator_fn(data_path,
                              hidden_layers=2,
                              message_passing_steps=10):
   """Gets the model function for tf.estimator.Estimator."""
-  metadata = _read_metadata(data_path)
+  metadata = _read_metadata(data_path, FLAGS.eval_split)
 
   model_kwargs = dict(
       latent_size=latent_size,
@@ -424,17 +426,24 @@ def get_rollout_estimator_fn(data_path,
   return estimator_fn
 
 
-def _read_metadata(data_path):
-  with open(os.path.join(data_path, 'metadata.json'), 'rt') as fp:
+def _read_metadata(data_path, split='train'):
+  meta_file = os.path.join(data_path, split+'.json')
+  if not os.path.exists(meta_file):
+    meta_file = os.path.join(data_path, 'metadata.json')
+  with open(meta_file, 'rt') as fp:
     return json.loads(fp.read())
 
 
 def main(_):
   """Train or evaluates the model."""
-
+  INPUT_SEQUENCE_LENGTH = FLAGS.in_seq_len
   if FLAGS.mode in ['train', 'eval']:
+    # strategy = tf.distribute.experimental.MultiWorkerMirroredStrategy(num_gpus=1)
+    strategy = tf.distribute.MirroredStrategy()
+    config = tf.estimator.RunConfig(train_distribute=strategy)
     estimator = tf.estimator.Estimator(
         get_one_step_estimator_fn(FLAGS.data_path, FLAGS.noise_std),
+        config=config,
         model_dir=FLAGS.model_path)
     if FLAGS.mode == 'train':
       # Train all the way through.
@@ -457,7 +466,7 @@ def main(_):
         model_dir=FLAGS.model_path)
 
     # Iterate through rollouts saving them one by one.
-    metadata = _read_metadata(FLAGS.data_path)
+    metadata = _read_metadata(FLAGS.data_path, FLAGS.eval_split)
     rollout_iterator = rollout_estimator.predict(
         input_fn=get_input_fn(FLAGS.data_path, batch_size=1,
                               mode='rollout', split=FLAGS.eval_split))
