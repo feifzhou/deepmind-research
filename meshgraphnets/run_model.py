@@ -79,7 +79,7 @@ def learner(model, params):
   if FLAGS.cache:
     ds = ds.cache()
   if FLAGS.randommesh:
-    ds = ds.map(dataset.augment_by_randommesh)
+    ds = ds.map(dataset.augment_by_randommesh, periodic=FLAGS.periodic)
   if FLAGS.rotate:
     ds = ds.map(dataset.augment_by_rotation)
   ds = dataset.add_targets(ds, [params['field']], add_history=params['history'])
