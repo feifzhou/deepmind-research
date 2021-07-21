@@ -128,3 +128,87 @@ def batch_dataset(ds, batch_size):
     ds = ds.window(batch_size, drop_remainder=True)
     ds = ds.map(batch_accumulate, num_parallel_calls=8)
   return ds
+
+
+def augment_by_rotation(inputs):
+  """Augment a single stack of inputs by rotation.
+  Args:
+    inputs
+  Returns:
+    randomly rotated.
+
+  """
+  print(f'debug inputs {inputs.__class__} {inputs}')
+  # cosine and sine of three angles
+  dim_mesh = inputs['mesh_pos'].shape[-1]
+  if dim_mesh == 3:
+    cs = tf.random.normal((3,2))
+    cs = tf.linalg.normalize(cs, axis=1)[0]
+    rotation = tf.stack([cs[0,0]*cs[1,0], cs[0,0]*cs[1,1]*cs[2,1]-cs[0,1]*cs[2,0], cs[0,0]*cs[1,1]*cs[2,0]+cs[0,1]*cs[2,1],
+                        cs[0,1]*cs[1,0], cs[0,1]*cs[1,1]*cs[2,1]+cs[0,0]*cs[2,0], cs[0,1]*cs[1,1]*cs[2,0]-cs[0,0]*cs[2,1],
+                        -cs[1,1],        cs[1,0]*cs[2,1],                         cs[1,0]*cs[2,0]])
+    rotation = tf.transpose(tf.reshape(rotation, (3,3)))
+  elif dim_mesh == 2:
+    cs = tf.random.normal((1,2))
+    cs = tf.linalg.normalize(cs, axis=1)[0]
+    rotation = tf.stack([cs[0,0], -cs[0,1],
+                         cs[0,1],  cs[0,0]])
+    rotation = tf.transpose(tf.reshape(rotation, (2,2)))
+  else:
+    raise ValueError(f'WARNING rotation not implemented for dimension {dim_mesh}')
+  new_latt = tf.linalg.matmul(inputs['lattice'][0], rotation)
+  for key, val in inputs.items():
+    print(f'debug k {key} v {val}')
+    if key in ('mesh_pos','lattice'):
+      inputs[key] = tf.linalg.matmul(val, rotation)
+  inputs['inv_lattice'] = tf.linalg.inv(inputs['lattice'])
+  return inputs
+
+
+def augment_by_randommesh(inputs, ratio):
+  """Augment a single stack of inputs by randomly selecting points and triangulation
+       based on the selected points.
+  Args:
+    inputs
+    ratio = (lower limit, higher limit)
+  Returns:
+    randomly rotated.
+
+  """
+  print(f'debug inputs {inputs.__class__} {inputs}')
+  n_inputs = tf.random(ratio[0], ratio[1]).cast(int32)
+  # cosine and sine of three angles
+  # input points in inputs['mesh_pos']: [N_sequence, N_pts, dim] float32
+  #   input mesh inputs['faces']: [N_sequence, N_faces, dim+1] int32
+  #   lattice inputs['lattice'] inputs['inv_lattice'] # ignored
+  # 1 randomly select N_inputs points from mesh_pos
+  # 2 call generate_mesh on selected points
+  # change dict inputs['mesh_pos'] = new selected points
+  # change dict inputs['faces'] = new triangles.
+  # return 
+
+
+
+  dim_mesh = inputs['mesh_pos'].shape[-1]
+  if dim_mesh == 3:
+    cs = tf.random.normal((3,2))
+    cs = tf.linalg.normalize(cs, axis=1)[0]
+    rotation = tf.stack([cs[0,0]*cs[1,0], cs[0,0]*cs[1,1]*cs[2,1]-cs[0,1]*cs[2,0], cs[0,0]*cs[1,1]*cs[2,0]+cs[0,1]*cs[2,1],
+                        cs[0,1]*cs[1,0], cs[0,1]*cs[1,1]*cs[2,1]+cs[0,0]*cs[2,0], cs[0,1]*cs[1,1]*cs[2,0]-cs[0,0]*cs[2,1],
+                        -cs[1,1],        cs[1,0]*cs[2,1],                         cs[1,0]*cs[2,0]])
+    rotation = tf.transpose(tf.reshape(rotation, (3,3)))
+  elif dim_mesh == 2:
+    cs = tf.random.normal((1,2))
+    cs = tf.linalg.normalize(cs, axis=1)[0]
+    rotation = tf.stack([cs[0,0], -cs[0,1],
+                         cs[0,1],  cs[0,0]])
+    rotation = tf.transpose(tf.reshape(rotation, (2,2)))
+  else:
+    raise ValueError(f'WARNING rotation not implemented for dimension {dim_mesh}')
+  new_latt = tf.linalg.matmul(inputs['lattice'][0], rotation)
+  for key, val in inputs.items():
+    print(f'debug k {key} v {val}')
+    if key in ('mesh_pos','lattice'):
+      inputs[key] = tf.linalg.matmul(val, rotation)
+  inputs['inv_lattice'] = tf.linalg.inv(inputs['lattice'])
+  return inputs

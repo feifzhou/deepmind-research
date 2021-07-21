@@ -56,6 +56,12 @@ flags.DEFINE_integer('periodic', 0, 'NPS periodic boundary condition')
 flags.DEFINE_integer('batch', 4, 'batch size')
 flags.DEFINE_float('lr', 1e-4, 'learning rate')
 flags.DEFINE_integer('lr_decay', 5000000, help='Learning rate decay.')
+flags.DEFINE_boolean('rotate', False, help='Data augmentation by rotation')
+flags.DEFINE_boolean('cache', False, help='Cache whole dataset into memory')
+flags.DEFINE_boolean('randommesh', False, help='Data augmentation by generating random points and associated mesh')
+flags.DEFINE_float('random_lower', 0.3, 'ratio of selected points: lower bound')
+flags.DEFINE_float('random_lower', 0.8, 'ratio of selected points: upper bound')
+
 
 PARAMETERS = {
     'cfd': dict(noise=0.02, gamma=1.0, field='velocity', history=False,
@@ -70,6 +76,12 @@ PARAMETERS = {
 def learner(model, params):
   """Run a learner job."""
   ds = dataset.load_dataset(FLAGS.dataset_dir, 'train')
+  if FLAGS.cache:
+    ds = ds.cache()
+  if FLAGS.randommesh:
+    ds = ds.map(dataset.augment_by_randommesh)
+  if FLAGS.rotate:
+    ds = ds.map(dataset.augment_by_rotation)
   ds = dataset.add_targets(ds, [params['field']], add_history=params['history'])
   ds = dataset.split_and_preprocess(ds, noise_field=params['field'],
                                     noise_scale=params['noise'] if FLAGS.noise<0 else FLAGS.noise,
