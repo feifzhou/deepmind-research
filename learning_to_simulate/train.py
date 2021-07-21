@@ -65,6 +65,8 @@ flags.DEFINE_string('output_path', None,
 flags.DEFINE_float('lr', 1e-4, help='Learning rate.')
 flags.DEFINE_integer('lr_decay', 5000000, help='Learning rate.')
 flags.DEFINE_integer('in_seq_len', 6, help='INPUT_SEQUENCE_LENGTH rate.')
+flags.DEFINE_boolean('rotate', False, help='Data augmentation by rotation')
+flags.DEFINE_boolean('cache', False, help='Cache whole dataset into memory')
 
 FLAGS = flags.FLAGS
 
@@ -127,6 +129,27 @@ def prepare_inputs(tensor_dict):
     # Add an extra dimension for stacking via concat.
     tensor_dict['step_context'] = tensor_dict['step_context'][tf.newaxis]
   return tensor_dict, target_position
+
+
+def augment_by_rotation(context_dict, pos):
+  """Augment a single stack of inputs by rotation.
+  Args:
+    context dict, and pos dict
+  Returns:
+    A tuple of input randomly rotated.
+
+  """
+  # cosine and sine of three angles
+  cs = tf.random.normal((3,2))
+  cs = tf.linalg.normalize(cs, axis=1)[0]
+  rotation = tf.stack([cs[0,0]*cs[1,0], cs[0,0]*cs[1,1]*cs[2,1]-cs[0,1]*cs[2,0], cs[0,0]*cs[1,1]*cs[2,0]+cs[0,1]*cs[2,1],
+                      cs[0,1]*cs[1,0], cs[0,1]*cs[1,1]*cs[2,1]+cs[0,0]*cs[2,0], cs[0,1]*cs[1,1]*cs[2,0]-cs[0,0]*cs[2,1],
+                      -cs[1,1],        cs[1,0]*cs[2,1],                         cs[1,0]*cs[2,0]])
+  rotation = tf.transpose(tf.reshape(rotation, (3,3)))
+  pos['position'] = tf.linalg.matmul(pos['position'], rotation)
+  if 'step_context' in context_dict:
+    print('WARNING: step_context NOT yet processed by rotation')
+  return context_dict, pos
 
 
 def prepare_rollout_inputs(context, features):
@@ -193,6 +216,10 @@ def get_input_fn(data_path, batch_size, mode, split):
     ds = ds.map(functools.partial(
         reading_utils.parse_serialized_simulation_example, metadata=metadata))
     if mode.startswith('one_step'):
+      if mode == 'one_step_train' and FLAGS.cache:
+        ds = ds.cache()
+      if mode == 'one_step_train' and FLAGS.rotate:
+        ds = ds.map(augment_by_rotation)
       # Splits an entire trajectory into chunks of 7 steps.
       # Previous 5 velocities, current velocity and target.
       split_with_window = functools.partial(

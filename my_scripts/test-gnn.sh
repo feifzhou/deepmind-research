@@ -21,14 +21,16 @@ for i in `seq 4`; do
 done
 python learning_to_simulate/particle2tfrecord.py ../ising-gpu/MD/nano-Si/dump.xy-* -o $DAT/train
 # train
-python -m learning_to_simulate.train \
-    --data_path=$DAT --model_path=$DIR --output_path=$DIR \
-    --batch_size=24 --lr_decay=100000 --lr=1e-3
+CUDA_VISIBLE_DEVICES=3 nohup python -m learning_to_simulate.train --data_path=$DAT --model_path=$DIR --output_path=$DIR \
+    --batch_size=64 --lr_decay=200000 --lr=2e-3  --in_seq_len=6 --noise_std=3e-3 --rotate --cache 
+# eval
+python -m learning_to_simulate.train --mode=eval \
+    --data_path=$DAT --model_path=$DIR --output_path=$DIR 
 # rollout
 python -m learning_to_simulate.train --mode=eval_rollout \
-    --data_path=$DAT --model_path=$DIR --output_path=$DIR
+    --data_path=$DAT --model_path=$DIR --output_path=$DIR 
 # render
-python learning_to_simulate/render_3d.py  --rollout_path=$DIR/rollout_test_0.pkl
+python my_scripts/render_3d.py  --rollout_path=$DIR/rollout_test_0.pkl
 
 
 # cloth
@@ -65,11 +67,15 @@ python -m meshgraphnets.plot_cfd --rollout_path=$DIR/rollout.pkl
 # grain growth
 DIR=meshgraphnets/experiment/grain
 DAT=$HOME/data/grain
+# data generation
 for i in valid train test; do
     python meshgraphnets/npy2tfrecord.py $DAT/$i.npy -o $DAT/$i --periodic;
 done
+# train
 python -m meshgraphnets.run_model --model=NPS --mode=train --checkpoint_dir=$DIR --dataset_dir=$DAT --periodic=1 --nfeat_in=1 --nfeat_out=1 --num_training_steps=500000 --batch=8 --lr=4e-4 --lr_decay=100000
+# rollout
 python -m meshgraphnets.run_model --model=NPS --mode=eval  --checkpoint_dir=$DIR --dataset_dir=$DAT --periodic=1 --nfeat_in=1 --nfeat_out=1 --rollout_split=test --rollout_path=$DIR/rollout.pkl --num_rollouts=1
+# visualization
 python -m meshgraphnets.plot_cfd --rollout_path=$DIR/rollout.pkl --skip=5 --mirrory
 python -m meshgraphnets.plot_cfd --rollout_path=$DIR/rollout.pkl --skip=98 -o GNN-grain.gif --scale=0.5
 ################# tests, dilation tests, hyper parameters
