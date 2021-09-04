@@ -2,6 +2,7 @@
  Simple two-level AMR using TF
 """
 import numpy as np
+np.set_printoptions(edgeitems=30, linewidth=200, formatter=dict(float=lambda x: "%.3g" % x))
 import tensorflow.compat.v1 as tf
 from my_libs.utils import grid_points, int2digits, digits2int, linear_interp_coeff
 
@@ -108,9 +109,13 @@ class amr_state_variables:
         # self.get_valid_edges()
 
 
-    def update_field_from_graph(self, field_on_mesh):
+    def update_field_from_graph(self, field, mesh=None, update=True):
+        mesh = self.mesh if mesh is None else mesh
         # print('right before update field', tf.reduce_max(self.field_all), tf.reduce_min(self.field_all))
-        self.field_all = tf.scatter_nd(self.mesh, field_on_mesh, self.shape_all+(1,))
+        field = tf.scatter_nd(mesh, field, self.shape_all+(1,))
+        if update:
+            self.field_all = field
+        return field
         # print('right after update field', tf.reduce_max(self.field_all), tf.reduce_min(self.field_all))
         # plot_amr(self.mesh.numpy(), field_on_mesh.numpy(), self.edges.numpy())
 
@@ -134,7 +139,8 @@ class amr_state_variables:
     #     self.mesh = tf.where(self.mask_all)
     #     print(f'debug update mesh {self.mesh.shape} {self.mask_all.shape}')
 
-    def interpolate_field(self, field0, refine_idx, refine_in_coarse_index):
+    def interpolate_field(self, field0, refine_idx, refine_in_coarse_index, field_all=None):
+        field_all = self.field_all if field_all is None else field_all
         # intp_val = tf.reshape(tf.tensordot(tf.gather_nd(field0, refine_idx), self.interpolator1, 1), (-1,1))
         # print(f'debug refine_in_coarse_index {refine_in_coarse_index.shape} tf.gather_nd(self.field_all, refine_in_coarse_index) {tf.gather_nd(self.field_all, refine_in_coarse_index).shape}')
         intp_val = tf.reshape(tf.tensordot(tf.gather_nd(field0, refine_idx), self.interpolator1, 1), (-1,1))
@@ -144,86 +150,115 @@ class amr_state_variables:
         # print(f'debug inptval {intp_val.shape} intpidx {intp_index.shape} all {self.field_all.shape} tf.gather_nd(field0, refine_idx), self.interpolator1 {tf.gather_nd(field0, refine_idx).shape } {self.interpolator1.shape}')
         # print('right before interpolation', tf.reduce_max(self.field_all), tf.reduce_min(self.field_all))
         # plot_amr(self.mesh.numpy(), tf.gather_nd(self.type_all, self.mesh).numpy(), self.edges.numpy())
-        self.field_all = tf.tensor_scatter_nd_update(self.field_all, intp_index, intp_val)
+        return tf.tensor_scatter_nd_update(field_all, intp_index, intp_val)
         # print('right after interpolation', tf.reduce_max(self.field_all), tf.reduce_min(self.field_all))
         # plot_amr(self.mesh.numpy(), tf.gather_nd(self.type_all, self.mesh).numpy(), self.edges.numpy())
 
-    def update_topology(self):
+
+    def get_mask(self, refine_index):
+        # refine_index = self.refine_index if refine_index is None else refine_index
+        # valid = tf.where(tf.reshape(self.refine_flag, self.shape0))
+        valid0 = int2digits(refine_index, self.shape0)
+        # print(f'debug valid0 {valid0}')
+        valid0 = tf.reshape((valid0*self.shape1 + self.indices_per1_whole) % self.shape_all, (-1,self.dim))
+        mask_all = tf.tensor_scatter_nd_update(self.mask_all_0, valid0, tf.ones(tf.shape(valid0)[0], dtype=tf.int32))
+        return mask_all
+        # mask_all = tf.scatter_nd_update(valid, tf.ones(valid.shape[0], dtype=tf.int32), self.shape_all)
+        # self.mask_all = tf.cast(tf.cast(mask_all, tf.bool), tf.int32)
+
+
+    def update_topology(self, mesh=None, field_all=None, refine_index=None, coarse_index=None, update=True):
+        # refine/coarse_index in [0, N0)
+        mesh = self.mesh if mesh is None else mesh
+        field_all = self.field_all if field_all is None else field_all
+        refine_index = self.refine_index if refine_index is None else refine_index
+        coarse_index = self.coarse_index if coarse_index is None else coarse_index
+        nrefine_old = tf.size(refine_index)
+        ncoarse_old = tf.size(coarse_index)
         # which of fine mesh0 to coarsen?
         # refine_index = tf.where(self.refine_flag)
-        field1 = tf.reshape(tf.gather_nd(self.field_all, tf.reshape(tf.gather_nd(self.mesh0_whole_, self.refine_index),(-1,self.dim))), (-1,self.n_per1_whole))
+        field1 = tf.reshape(tf.gather_nd(field_all, tf.reshape(tf.gather_nd(self.mesh0_whole_, refine_index),(-1,self.dim))), (-1,self.n_per1_whole))
         coarse_in_refine = (tf.math.reduce_max(field1,1) - tf.math.reduce_min(field1,1)) <= self.refine_threshold
-        refine_in_refine_index = tf.gather(self.refine_index, tf.where(tf.logical_not(coarse_in_refine)))
+        refine_in_refine_index = tf.gather(refine_index, tf.where(tf.logical_not(coarse_in_refine)))
 
         # coarse_flag = tf.tensor_scatter_nd_update(self.coarse_fla)
 
         # which of coarse mesh0 to refine, i.e. interpolate?
         # coarse_index = tf.where(self.coarse_flag)
-        field0 = tf.reshape(tf.gather_nd(self.field_all, tf.reshape(tf.gather_nd(self.mesh0_corner_, self.coarse_index),(-1,self.dim))), (-1,self.n_per1_corner))
-        # print(f'debug field0 {field0.shape} field1 {field1.shape}')
+        field0 = tf.reshape(tf.gather_nd(field_all, tf.reshape(tf.gather_nd(self.mesh0_corner_, coarse_index),(-1,self.dim))), (-1,self.n_per1_corner))
+        # print(f'debug field0 {field0.shape} {field0} field1 {field1.shape} {field1}')
         refine_in_coarse = (tf.math.reduce_max(field0,1) - tf.math.reduce_min(field0,1)) >  self.refine_threshold
         refine_idx =  tf.where(refine_in_coarse)
-        refine_in_coarse_index = tf.gather(self.coarse_index, refine_idx)
+        refine_in_coarse_index = tf.gather(coarse_index, refine_idx)
+        # print(f'debug refine_index before update {refine_index}')
+        # print(f'debug  coarse_in_refine {coarse_in_refine} refine_in_refine_index {refine_in_refine_index} refine_in_coarse {refine_in_coarse} refine_idx {refine_idx} refine_in_coarse_index {refine_in_coarse_index}')
 
         # synthesize new refine_flag
-        # print(f'debug refine_in_refine_index, refine_in_coarse_index {refine_in_refine_index.shape}, {refine_in_coarse_index.shape}')
-        nrefine_old = tf.size(self.refine_index)
-        ncoarse_old = tf.size(self.coarse_index)
-        self.refine_index = tf.reshape(tf.concat([refine_in_refine_index, refine_in_coarse_index], 0), (-1,1))
+        # print(f'debug refine_in_refine_index, refine_in_coarse_index {refine_in_refine_index.shape} {refine_in_refine_index}, {refine_in_coarse_index.shape} {refine_in_coarse_index}')
+        refine_index = tf.reshape(tf.concat([refine_in_refine_index, refine_in_coarse_index], 0), (-1,1))
+        # print(f'debug refine_index after  update {refine_index}')
         # take care of buffer, if any
         if self.buffer == 0:
-            self.refine_flag = tf.scatter_nd(self.refine_index, tf.fill([tf.size(self.refine_index)], True), [self.n0])
+            refine_flag = tf.scatter_nd(refine_index, tf.fill([tf.size(refine_index)], True), [self.n0])
         elif self.buffer == 1:
-            flagged = int2digits(self.refine_index, self.shape0)
+            flagged = int2digits(refine_index, self.shape0)
             # plt.scatter(*(flagged.numpy()[:,0,:].T)); plt.show()
             # print(f'debug', flagged, self.indices_neighbor_alldir)
             # flagged = tf.reshape(flagged[:,None,:] + self.indices_neighbor_alldir, (-1, self.dim)) % self.shape0
             flagged = tf.reshape(flagged + self.indices_neighbor_alldir, (-1, self.dim)) % self.shape0
             # plt.scatter(*(flagged.numpy()[:,:].T)); plt.show()
-            old_refne_index = self.refine_index
-            self.refine_index = (tf.unique(digits2int(flagged, self.shape0))[0])[:,None]
-            self.refine_flag = tf.scatter_nd(self.refine_index, tf.fill([tf.size(self.refine_index)], True), [self.n0])
-            refine_idx = tf.where(tf.gather_nd(self.refine_flag, self.coarse_index))
-            refine_in_coarse_index = tf.gather(self.coarse_index, refine_idx)
+            # old_refne_index = self.refine_index
+            refine_index = (tf.unique(digits2int(flagged, self.shape0))[0])[:,None]
+            refine_flag = tf.scatter_nd(refine_index, tf.fill([tf.size(refine_index)], True), [self.n0])
+            refine_idx = tf.where(tf.gather_nd(refine_flag, coarse_index))
+            refine_in_coarse_index = tf.gather(coarse_index, refine_idx)
         else:
             raise ValueError(f'ERROR: buffer must be 0 or 1')
 
-        self.interpolate_field(field0, refine_idx, refine_in_coarse_index)
+        # print(f'debug before interpolation refine_index {refine_index} refine_flag {refine_flag} refine_idx {refine_idx} field0 {field0} refine_in_coarse_index {refine_in_coarse_index}')
+        # print(f' field_all {field_all[...,0]}')
+        field_all = self.interpolate_field(field0, refine_idx, refine_in_coarse_index, field_all)
+        # print(f' field_all after {field_all[...,0]}')
 
         # other book-keeping
-        self.coarse_flag = tf.logical_not(self.refine_flag)
-        self.coarse_index = tf.where(self.coarse_flag)
+        coarse_flag = tf.logical_not(refine_flag)
+        coarse_index = tf.where(coarse_flag)
         # print(f'debug field0 {field0.shape} field1 {field1.shape}')
         # print(f'debug refine flag {self.refine_index.shape} coarse_flag {self.coarse_index.shape}')
 
         # refine_flag = tf.logical_not(coarse_flag)
         # quick return possible but not implemented here because of stupid tf 1.x
-        # valid = tf.where(tf.reshape(self.refine_flag, self.shape0))
-        valid = int2digits(self.refine_index, self.shape0)
-        # print(f'debug valid {valid}')
-        valid = tf.reshape((valid*self.shape1 + self.indices_per1_whole) % self.shape_all, (-1,self.dim))
-        self.mask_all = tf.tensor_scatter_nd_update(self.mask_all_0, valid, tf.ones(tf.shape(valid)[0], dtype=tf.int32))
-        # mask_all = tf.scatter_nd_update(valid, tf.ones(valid.shape[0], dtype=tf.int32), self.shape_all)
-        # self.mask_all = tf.cast(tf.cast(mask_all, tf.bool), tf.int32)
-        self.mesh = tf.where(self.mask_all)
+        mask_all = self.get_mask(refine_index)
+        mesh = tf.where(mask_all)
         # print(f'debug update mesh {self.mesh.shape} {self.mask_all.shape}')
-        print(f'Updates: coarsened/fine= {nrefine_old-tf.size(refine_in_refine_index)}/{nrefine_old}, refined/coarse={tf.size(refine_in_coarse_index)}/{ncoarse_old}, NEW fine= {tf.size(self.refine_index)} mesh= {self.mesh.shape[0]}')
+        print(f'Updates: coarsened/fine= {nrefine_old-tf.size(refine_in_refine_index)}/{nrefine_old}, refined/coarse={tf.size(refine_in_coarse_index)}/{ncoarse_old}, NEW fine= {tf.size(refine_index)} mesh= {mesh.shape[0]}')
         # self.get_valid_edges()
+        if update:
+            self.mask_all = mask_all
+            self.mesh = mesh
+            self.field_all = field_all
+            self.refine_index = refine_index
+            self.refine_flag = refine_flag
+            self.coarse_flag = coarse_flag
+            self.coarse_index = coarse_index
+        return mask_all, mesh, field_all
 
 
-    def get_valid_edges(self):
+    def get_valid_edges(self, mesh=None, mask_all=None, update=True):
         # fine edges
-        edges_A = tf.reshape(tf.tile(self.mesh, [1,2]), (-1, dim))
-        edges_B = tf.reshape((self.mesh[:,None] + self.indices_neighbor) % self.shape_all, (-1, dim))
-        # print(f'debug a {edges_A.shape} b {edges_B.shape} self.mask_all {self.mask_all.shape}')
-        valid = tf.where(tf.gather_nd(self.mask_all, edges_B))
+        mesh = self.mesh if mesh is None else mesh
+        mask_all = self.mask_all if mask_all is None else mask_all
+        edges_A = tf.reshape(tf.tile(mesh, [1,2]), (-1, self.dim))
+        edges_B = tf.reshape((mesh[:,None] + self.indices_neighbor) % self.shape_all, (-1, self.dim))
+        valid = tf.where(tf.gather_nd(mask_all, edges_B))
+        # print(f'debug a {edges_A.shape} b {edges_B.shape} mask_all {mask_all.shape} valid {valid.shape}')
         edges_lv1 = tf.tensordot(tf.gather_nd(tf.stack([edges_A, edges_B],1), valid), self.ijk2int, 1)
         # print(f'debug level1 (fine) edges', {edges_lv1.__class__})
         # coarse edges
-        edges_A = tf.reshape(tf.tile(self.mesh0, [1,2]), (-1, dim))
-        edges_B = tf.reshape((self.mesh0[:,None] + self.indices_neighbor_level0) % self.shape_all, (-1, dim))
-        edges_Aplus1 = tf.reshape((self.mesh0[:,None] + self.indices_neighbor) % self.shape_all, (-1, dim))
-        valid = tf.where(tf.equal(tf.gather_nd(self.mask_all, edges_Aplus1), 0)) # add missing coarse edges only
+        edges_A = tf.reshape(tf.tile(self.mesh0, [1,2]), (-1, self.dim))
+        edges_B = tf.reshape((self.mesh0[:,None] + self.indices_neighbor_level0) % self.shape_all, (-1, self.dim))
+        edges_Aplus1 = tf.reshape((self.mesh0[:,None] + self.indices_neighbor) % self.shape_all, (-1, self.dim))
+        valid = tf.where(tf.equal(tf.gather_nd(mask_all, edges_Aplus1), 0)) # add missing coarse edges only
         # print(f'debug valid {valid.shape} edges_A {edges_A.shape} edges_B {edges_B.shape} self.ijk2int {self.ijk2int.shape}')
         # print(f'tf ver {tf.__version__}')
         # print(f'debug ab {tf.stack([edges_A, edges_B],1).shape}')
@@ -233,12 +268,15 @@ class amr_state_variables:
         edges = tf.concat([edges_lv1, edges_lv0], 0)
         # print(f'debug edges {edges.shape}')
         # now map index in whole region to index in returned mesh
-        index_final = tf.cumsum(tf.reshape(self.mask_all, [-1]))-1
-        self.edges = tf.reshape(tf.gather(index_final, tf.reshape(edges,[-1])), (-1,2))
-        return self.edges
+        index_final = tf.cumsum(tf.reshape(mask_all, [-1]))-1
+        edges = tf.reshape(tf.gather(index_final, tf.reshape(edges,[-1])), (-1,2))
+        # print(f'debug edge min {tf.reduce_min(edges)} max {tf.reduce_max(edges)} mesh {tf.shape(mesh)}')
+        if update:
+            self.edges = edges
+        return edges
         
 
-    def to_graph(self, scale=1.0, target=None):
+    def to_graph(self, mesh=None, mask_all=None, field_all=None, field_tgt=None, scale=1.0, type_all=None, update=True):
         """
         output graph depending on current mask_all and mesh=where(mask_all)
         returns:
@@ -249,18 +287,39 @@ class amr_state_variables:
           edges          [N_edges, 2, dtype=int64]
         """
         # print(f'debug mesh {self.mesh.shape}')
-        return tf.cast(self.mesh, tf.float32)*scale, \
-          tf.gather_nd(self.type_all, self.mesh), \
-          tf.gather_nd(self.field_all, self.mesh), \
-          tf.constant(0) if target is None else tf.gather_nd(target, self.mesh), \
-          self.get_valid_edges()
-
+        mesh = self.mesh if mesh is None else mesh
+        mask_all = self.mask_all if mask_all is None else mask_all
+        type_all = self.type_all if type_all is None else type_all
+        field_all = self.field_all if field_all is None else field_all
+        # print(f'debug TO_GRAPH field {tf.gather_nd(field_all, mesh)} field_all {field_all[...,0]} mesh {mesh.shape}')
+        # print(f'debug field tgt {field_tgt}')
+        return tf.cast(mesh, tf.float32)*scale, \
+          tf.gather_nd(type_all, mesh), \
+          tf.gather_nd(field_all, mesh), \
+          tf.constant(0) if field_tgt is None else tf.gather_nd(field_tgt, mesh), \
+          self.get_valid_edges(mesh, mask_all, update=update)
 
 
     def adapt(self, field_on_mesh):
         self.update_field_from_GNN(field_on_mesh)
         self.update_topology()
         return self.to_graph()
+
+
+    def remesh_input(self, mesh, field_inp, field_tgt, scale=1.0, input_dense=True):
+        # print(f'debug in remesh_input')
+        if input_dense:
+            # simply reshape
+            field_all = tf.reshape(field_inp, self.shape_all+(1,))
+        else:
+            field_all = self.update_field_from_graph(field_inp, mesh=mesh, update=False)
+        # print(f'debug in remesh_input field_all {field_all}')
+        # field_tgt is always dense
+        field_tgt = tf.reshape(field_tgt, self.shape_all+(1,))
+        # print(f'debug in remesh_input field_tgt {field_tgt}')
+        mask_all, mesh, field_all = self.update_topology(mesh, field_all, update=False)
+        # print(f'debug in remesh_input mesh {mesh} field_all {field_all}')
+        return self.to_graph(mesh, mask_all, field_all, field_tgt, scale=scale, update=False)
 
 
     #### @classmethod
@@ -359,6 +418,7 @@ if __name__ == '__main__':
     # print(phi)
     phi = tf.reshape(phi,[N]*dim + [1])
     phis = tf.reshape([1-tf.exp(-(tf.norm(mesh_pos - tf.convert_to_tensor([[N/2+1.8*t,N/3+0.9*t]]),axis=1, ord=2) - 23)**2/4) for t in range(10)], [-1]+[N]*dim + [1])
+    # phis = tf.reshape([1-tf.exp(-(tf.norm(mesh_pos - tf.convert_to_tensor([[N/2+0.8*t,N/3+0.3*t]]),axis=1, ord=2) - 0.02)**2/0.5) for t in range(10)], [-1]+[N]*dim + [1])
 
     print('\n********************')
     print('Testing manually')
@@ -375,15 +435,30 @@ if __name__ == '__main__':
     mesh, typ, field, target, edges = compatible_run_tf(state.to_graph())
     plot_amr(mesh, field, edges)
 
+
+    print('\n********************')
+    for buffer in (0, 1):
+        print('Testing remesh_input buffer=', buffer)
+        state = amr_state_variables(dim, np.full(dim, N), np.full(dim, N0), phis[0], refine_threshold=3e-4, buffer=buffer)
+        for i in (2,5):
+            mesh, typ, field, target, edges = compatible_run_tf(state.remesh_input(mesh, phis[i], tf.sqrt(phis[i+1]), input_dense=True))
+            plot_amr(mesh, field, edges)
+
+
     for buffer in (0, 1):
         print('\n********************')
         print('Testing adapting to new values in a loop buffer=', buffer)
         state = amr_state_variables(dim, np.full(dim, N), np.full(dim, N0), phis[0], refine_threshold=3e-4, buffer=buffer)
+        start = time.time()
         state.update_topology()
+        end = time.time()
+        print(' first time to update tpology', end - start)
+        start = time.time()
         mesh, typ, field, target, edges = compatible_run_tf(state.to_graph())
+        end = time.time()
+        print(' first time to get results', end - start)
         for i in range(10):
             print(f'  Step {i}')
-            # plot_amr(mesh.numpy(), field.numpy(), edges.numpy())
             start = time.time()
             state.update_field_from_graph(tf.gather_nd(phis[i],tf.cast(mesh,tf.int32)))
             end = time.time()
