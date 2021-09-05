@@ -25,13 +25,16 @@ from matplotlib import animation
 from matplotlib import tri as mtri
 import matplotlib.pyplot as plt
 import numpy as np
+import itertools
 
 FLAGS = flags.FLAGS
 flags.DEFINE_string('rollout_path', None, 'Path to rollout pickle file')
 flags.DEFINE_integer('skip', 1, 'skip timesteps between animation')
 flags.DEFINE_boolean('mirrory', False, 'Make mirror plots to better see periodic boundary condition along y')
 flags.DEFINE_boolean('label', True, 'show label')
-flags.DEFINE_boolean('mesh', False, 'show mesh')
+flags.DEFINE_boolean('mesh_tri', False, 'show mesh of triangulation')
+flags.DEFINE_boolean('mesh', False, 'show mesh, i.e. the edges')
+flags.DEFINE_boolean('colorbar', False, 'show colorbar')
 flags.DEFINE_boolean('tri', False, 'use specified triangulation (--notri: calculate Delaunay triangulation) Do NOT set unless trigular mesh')
 flags.DEFINE_float('scale', 1.0, 'image scale WRT default')
 flags.DEFINE_string('cmap', 'viridis', 'color map')
@@ -51,6 +54,9 @@ def run_animation(anim, fig):
 
     fig.canvas.mpl_connect('button_press_event', onClick)
 
+def vector_short_pbc(vectors, cell_size):
+  return vectors - np.around(vectors/cell_size)*cell_size
+
 def main(unused_argv):
   if FLAGS.o: matplotlib.use('Agg')
   # matplotlib.rc('image', cmap=plt.get_cmap(FLAGS.cmap))
@@ -68,6 +74,8 @@ def main(unused_argv):
   num_steps = rollout_data[0]['gt_velocity'].shape[0]
   num_frames_per_rollout = (num_steps-1) // skip + 1
   num_frames = len(rollout_data) * num_frames_per_rollout
+  cell_size = np.max(rollout_data[0]['mesh_pos'][0],0) - np.min(rollout_data[0]['mesh_pos'][0],0)
+  cutoff = 0.6*np.max(cell_size)
 
   # compute bounds
   bounds = []
@@ -76,8 +84,9 @@ def main(unused_argv):
     bb_max = trajectory['gt_velocity'].max(axis=(0, 1))
     bounds.append((bb_min, bb_max))
 
-  def remove_boundary_face(faces, pos, cutoff=2.0):
-    face_diameter = np.stack([np.linalg.norm(pos[faces[:,ij[0]]]-pos[faces[:,ij[1]]],axis=1) for ij in ((0,1),(1,2),(0,2))], -1)
+  def remove_boundary_face(faces, pos, cutoff):
+    edges = itertools.combinations(range(len(faces[0])), 2)
+    face_diameter = np.stack([np.linalg.norm(pos[faces[:,ij[0]]]-pos[faces[:,ij[1]]],axis=1) for ij in edges], -1)
     face_diameter = np.max(face_diameter, axis=-1)
     return faces[np.where(face_diameter<cutoff)]
 
@@ -93,15 +102,23 @@ def main(unused_argv):
       pos = rollout_data[traj]['mesh_pos'][step]
       if FLAGS.tri:
         faces = rollout_data[traj]['faces'][step]
-        faces = remove_boundary_face(faces, pos)
+        faces = remove_boundary_face(faces, pos, cutoff)
       else:
         faces = None
       velocity = rollout_data[traj][['gt_velocity','pred_velocity'][col]][step]
       triang = mtri.Triangulation(pos[:, 0], pos[:, 1], faces)
-      ax.tripcolor(triang, velocity[:, 0], vmin=vmin[0], vmax=vmax[0])
-      if FLAGS.mesh: ax.triplot(triang, 'ko-', ms=0.5, lw=0.3)
+      f_plot = ax.tripcolor(triang, velocity[:, 0], vmin=vmin[0], vmax=vmax[0])
+      if FLAGS.mesh_tri: ax.triplot(triang, 'ko-', ms=0.5, lw=0.3)
       if FLAGS.label:
         ax.set_title('%s traj %d step %d' % (['GT','PD'][col], traj, step))
+      if FLAGS.colorbar:
+          ax.colorbar(f_plot)
+      if FLAGS.mesh:
+        edges = rollout_data[traj]['faces'][step]
+        lines = pos[edges]
+        pbc_flag = np.where(np.linalg.norm(lines[:,0]-lines[:,1],axis=1)< cutoff)
+        lines = lines[pbc_flag]
+        ax.add_collection(matplotlib.collections.LineCollection(lines, colors='r', linewidths=0.7))
     return fig,
 
   anim = animation.FuncAnimation(fig, animate, frames=num_frames, interval=100)
