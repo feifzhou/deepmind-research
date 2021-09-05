@@ -40,6 +40,7 @@ def _rollout(model, initial_state, num_steps):
       body=step_fn,
       loop_vars=(0, initial_state['velocity'],
                  tf.TensorArray(tf.float32, num_steps)),
+      back_prop=False, swap_memory=True,
       parallel_iterations=1)
   return output.stack()
 
