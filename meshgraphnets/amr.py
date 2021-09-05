@@ -83,7 +83,7 @@ class amr_state_variables:
         # self.mask_all = mask_all
         # self.field_all = field_all
         # self.edge_all = edge_all
-        type_all = np.zeros(self.shape_all, dtype=np.int32) if type_all is None else np.reshape(np.array(type_all, dtype=np.int32), self.shape_all)
+        type_all = np.zeros(self.shape_all+(1,), dtype=np.int32) if type_all is None else np.reshape(np.array(type_all, dtype=np.int32), self.shape_all+(1,))
         self.type_all = tf.convert_to_tensor(type_all)
         self.refine_threshold = refine_threshold
         # mesh_all = grid_points(np.array(shape_all)-1)# np.reshape(np.stack(np.meshgrid(*[np.arange(N) for N in shape_all], indexing='ij'),-1), (-1, dim))
