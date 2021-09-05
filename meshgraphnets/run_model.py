@@ -59,8 +59,13 @@ flags.DEFINE_integer('lr_decay', 5000000, help='Learning rate decay.')
 flags.DEFINE_boolean('rotate', False, help='Data augmentation by rotation')
 flags.DEFINE_boolean('cache', False, help='Cache whole dataset into memory')
 flags.DEFINE_boolean('randommesh', False, help='Data augmentation by generating random points and associated mesh')
-flags.DEFINE_float('random_lower', 0.3, 'ratio of selected points: lower bound')
-flags.DEFINE_float('random_lower', 0.8, 'ratio of selected points: upper bound')
+# flags.DEFINE_float('random_lower', 0.3, 'ratio of selected points: lower bound')
+# flags.DEFINE_float('random_upper', 0.8, 'ratio of selected points: upper bound')
+# AMR options
+flags.DEFINE_integer('amr_N', 64, 'system size, i.e. how many (fine) grids totally')
+flags.DEFINE_integer('amr_N1', 1, 'how many (fine) grids to bin into one, 1 to disable')
+flags.DEFINE_integer('amr_buffer', 1, 'how many buffer grids (must be 0 or 1)')
+flags.DEFINE_float('amr_threshold', 1e-3, 'threshold to coarsen regions if values are close')
 
 
 PARAMETERS = {
@@ -73,7 +78,7 @@ PARAMETERS = {
 }
 
 
-def learner(model, params):
+def learner(model, params, mesher=None):
   """Run a learner job."""
   ds = dataset.load_dataset(FLAGS.dataset_dir, 'train')
   if FLAGS.cache:
@@ -86,6 +91,8 @@ def learner(model, params):
   ds = dataset.split_and_preprocess(ds, noise_field=params['field'],
                                     noise_scale=params['noise'] if FLAGS.noise<0 else FLAGS.noise,
                                     noise_gamma=params['gamma'])
+  if mesher is not None:
+    ds = dataset.remesh(ds, mesher, random_translate=False)
   ds = dataset.batch_dataset(ds, FLAGS.batch)
   inputs = tf.data.make_one_shot_iterator(ds).get_next()
 
@@ -115,7 +122,7 @@ def learner(model, params):
   evaluator(model, params, 'valid', None)
 
 
-def evaluator(model, params, data_name, rollout_path):
+def evaluator(model, params, data_name, rollout_path, mesher=None):
   """Run a model rollout trajectory."""
   ds = dataset.load_dataset(FLAGS.dataset_dir, data_name)
   ds = dataset.add_targets(ds, [params['field']], add_history=params['history'])
@@ -164,10 +171,21 @@ def main(argv):
     nfeat_out=nfeat_out)
   else:
     model = params['model'].Model(learned_model)
+  if FLAGS.amr_N1 > 1:
+    from meshgraphnets import amr
+    print('''************* WARNING *************
+    The present AMR implementation assumes an input field on a cubic grid of size amr_N
+    ordered naturally. Make sure your dataset follows this convention''')
+    mesher = amr.amr_state_variables(FLAGS.dim, [FLAGS.amr_N]*FLAGS.dim,
+      [FLAGS.amr_N//FLAGS.amr_N1]*FLAGS.dim,
+      tf.zeros([FLAGS.amr_N**FLAGS.dim,1],dtype=tf.float32),
+      refine_threshold=FLAGS.amr_threshold, buffer=FLAGS.amr_buffer)
+  else:
+    mesher = None
   if FLAGS.mode == 'train':
-    learner(model, params)
+    learner(model, params, mesher)
   elif FLAGS.mode == 'eval':
-    evaluator(model, params, FLAGS.rollout_split, FLAGS.rollout_path)
+    evaluator(model, params, FLAGS.rollout_split, FLAGS.rollout_path, mesher)
 
 if __name__ == '__main__':
   app.run(main)

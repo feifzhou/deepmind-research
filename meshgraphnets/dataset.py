@@ -176,7 +176,7 @@ def augment_by_randommesh(inputs, ratio):
 
   """
   print(f'debug inputs {inputs.__class__} {inputs}')
-  n_inputs = tf.random(ratio[0], ratio[1]).cast(int32)
+  # n_inputs = tf.random(ratio[0], ratio[1]).cast(int32)
   # cosine and sine of three angles
   # input points in inputs['mesh_pos']: [N_sequence, N_pts, dim] float32
   #   input mesh inputs['faces']: [N_sequence, N_faces, dim+1] int32
@@ -186,29 +186,26 @@ def augment_by_randommesh(inputs, ratio):
   # change dict inputs['mesh_pos'] = new selected points
   # change dict inputs['faces'] = new triangles.
   # return 
+  raise ValueError('ERROR: random mesh is NOT implemented yet')
 
 
+def remesh(ds, mesher, random_translate=False):
+  dim = mesher.dim
+  def fn(trajectory):
+    mesh = trajectory['mesh_pos']
+    field_inp = tf.reshape(trajectory['velocity'], mesher.shape_all+(1,))
+    field_tgt = tf.reshape(trajectory['target|velocity'], mesher.shape_all+(1,))
+    if random_translate:
+      shift = tf.random.uniform([dim], [0]*dim, mesher.shape1, dtype=tf.int32)
+      field_inp = tf.roll(field_inp, shift, list(range(dim)))
+      field_tgt = tf.roll(field_tgt, shift, list(range(dim)))
+    keys = ('mesh_pos', 'node_type', 'velocity', 'target|velocity', 'cells')
+    values = mesher.remesh_input(mesh, field_inp, field_tgt, input_dense=True)
+    out = dict(zip(keys, values))
+    for key, val in trajectory.items():
+      if not key in keys:
+        out[key] = val
+    return out
 
-  dim_mesh = inputs['mesh_pos'].shape[-1]
-  if dim_mesh == 3:
-    cs = tf.random.normal((3,2))
-    cs = tf.linalg.normalize(cs, axis=1)[0]
-    rotation = tf.stack([cs[0,0]*cs[1,0], cs[0,0]*cs[1,1]*cs[2,1]-cs[0,1]*cs[2,0], cs[0,0]*cs[1,1]*cs[2,0]+cs[0,1]*cs[2,1],
-                        cs[0,1]*cs[1,0], cs[0,1]*cs[1,1]*cs[2,1]+cs[0,0]*cs[2,0], cs[0,1]*cs[1,1]*cs[2,0]-cs[0,0]*cs[2,1],
-                        -cs[1,1],        cs[1,0]*cs[2,1],                         cs[1,0]*cs[2,0]])
-    rotation = tf.transpose(tf.reshape(rotation, (3,3)))
-  elif dim_mesh == 2:
-    cs = tf.random.normal((1,2))
-    cs = tf.linalg.normalize(cs, axis=1)[0]
-    rotation = tf.stack([cs[0,0], -cs[0,1],
-                         cs[0,1],  cs[0,0]])
-    rotation = tf.transpose(tf.reshape(rotation, (2,2)))
-  else:
-    raise ValueError(f'WARNING rotation not implemented for dimension {dim_mesh}')
-  new_latt = tf.linalg.matmul(inputs['lattice'][0], rotation)
-  for key, val in inputs.items():
-    print(f'debug k {key} v {val}')
-    if key in ('mesh_pos','lattice'):
-      inputs[key] = tf.linalg.matmul(val, rotation)
-  inputs['inv_lattice'] = tf.linalg.inv(inputs['lattice'])
-  return inputs
+  ds = ds.map(fn, num_parallel_calls=8)
+  return ds
