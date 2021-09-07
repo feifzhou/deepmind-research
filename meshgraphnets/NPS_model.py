@@ -31,9 +31,10 @@ def vector_pbc(vec, lattice, inv_lattice):
 class Model(snt.AbstractModule):
   """Model for fluid simulation."""
 
-  def __init__(self, learned_model, name='NPS', dim=2, periodic=False, nfeat_in=2, nfeat_out=2):
+  def __init__(self, learned_model, name='NPS', dim=2, periodic=False, nfeat_in=2, nfeat_out=2, unique_op=True):
     super(Model, self).__init__(name=name)
     self.dim=dim; self.periodic=bool(periodic); self.nfeat_in=nfeat_in; self.nfeat_out=nfeat_out
+    self.unique_op = unique_op
     with self._enter_variable_scope():
       self._learned_model = learned_model
       self._output_normalizer = normalization.Normalizer(
@@ -50,7 +51,7 @@ class Model(snt.AbstractModule):
     node_features = tf.concat([inputs['velocity'], node_type], axis=-1)
 
     # construct graph edges
-    senders, receivers = common.triangles_to_edges(inputs['cells'])
+    senders, receivers = common.triangles_to_edges(inputs['cells'], unique_op=self.unique_op)
     relative_mesh_pos = (tf.gather(inputs['mesh_pos'], senders) -
                          tf.gather(inputs['mesh_pos'], receivers))
     # displacement vector under periodic boundary condition

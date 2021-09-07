@@ -167,7 +167,7 @@ class amr_state_variables:
         # self.mask_all = tf.cast(tf.cast(mask_all, tf.bool), tf.int32)
 
 
-    def update_topology(self, mesh=None, field_all=None, refine_index=None, coarse_index=None, update=True):
+    def update_topology(self, mesh=None, field_all=None, refine_index=None, coarse_index=None, update=True, index=False):
         # refine/coarse_index in [0, N0)
         mesh = self.mesh if mesh is None else mesh
         field_all = self.field_all if field_all is None else field_all
@@ -241,21 +241,24 @@ class amr_state_variables:
             self.refine_flag = refine_flag
             self.coarse_flag = coarse_flag
             self.coarse_index = coarse_index
-        return mask_all, mesh, field_all
+        if index:
+            return mask_all, mesh, field_all, refine_index, coarse_index
+        else:
+            return mask_all, mesh, field_all
 
 
     def get_valid_edges(self, mesh=None, mask_all=None, update=True):
         # fine edges
         mesh = self.mesh if mesh is None else mesh
         mask_all = self.mask_all if mask_all is None else mask_all
-        edges_A = tf.reshape(tf.tile(mesh, [1,2]), (-1, self.dim))
+        edges_A = tf.reshape(tf.tile(mesh, [1,self.dim]), (-1, self.dim))
         edges_B = tf.reshape((mesh[:,None] + self.indices_neighbor) % self.shape_all, (-1, self.dim))
         valid = tf.where(tf.gather_nd(mask_all, edges_B))
         # print(f'debug a {edges_A.shape} b {edges_B.shape} mask_all {mask_all.shape} valid {valid.shape}')
         edges_lv1 = tf.tensordot(tf.gather_nd(tf.stack([edges_A, edges_B],1), valid), self.ijk2int, 1)
         # print(f'debug level1 (fine) edges', {edges_lv1.__class__})
         # coarse edges
-        edges_A = tf.reshape(tf.tile(self.mesh0, [1,2]), (-1, self.dim))
+        edges_A = tf.reshape(tf.tile(self.mesh0, [1,self.dim]), (-1, self.dim))
         edges_B = tf.reshape((self.mesh0[:,None] + self.indices_neighbor_level0) % self.shape_all, (-1, self.dim))
         edges_Aplus1 = tf.reshape((self.mesh0[:,None] + self.indices_neighbor) % self.shape_all, (-1, self.dim))
         valid = tf.where(tf.equal(tf.gather_nd(mask_all, edges_Aplus1), 0)) # add missing coarse edges only
@@ -306,20 +309,27 @@ class amr_state_variables:
         return self.to_graph()
 
 
-    def remesh_input(self, mesh, field_inp, field_tgt, scale=1.0, input_dense=True):
+    def remesh_input(self, mesh, field_inp, field_tgt, refine_index=None, coarse_index=None, scale=1.0, input_dense=True, index=False):
+        mesh = tf.cast(mesh, tf.int32)
         # print(f'debug in remesh_input')
         if input_dense:
             # simply reshape
             field_all = tf.reshape(field_inp, self.shape_all+(1,))
         else:
             field_all = self.update_field_from_graph(field_inp, mesh=mesh, update=False)
-        # print(f'debug in remesh_input field_all {field_all}')
-        # field_tgt is always dense
-        field_tgt = tf.reshape(field_tgt, self.shape_all+(1,))
+        # ## field_tgt is always dense!!!
         # print(f'debug in remesh_input field_tgt {field_tgt}')
-        mask_all, mesh, field_all = self.update_topology(mesh, field_all, update=False)
-        # print(f'debug in remesh_input mesh {mesh} field_all {field_all}')
-        return self.to_graph(mesh, mask_all, field_all, field_tgt, scale=scale, update=False)
+        # field_tgt = tf.reshape(field_tgt, self.shape_all+(1,))# if field_tgt is not None else field_tgt
+        # ## WARNING: temporary fix
+        field_tgt = tf.transpose(tf.reshape(field_tgt, self.shape_all))[...,None]# if field_tgt is not None else field_tgt
+        # print(f'debug in remesh_input field_all {field_all} tgt {field_tgt} mesh {mesh}')
+        if index:
+            mask_all, mesh, field_all, refine_index, coarse_index = self.update_topology(mesh, field_all, refine_index=refine_index, coarse_index=coarse_index, update=False, index=index)
+            return self.to_graph(mesh, mask_all, field_all, field_tgt, scale=scale, update=False) + (refine_index, coarse_index)
+        else:
+            mask_all, mesh, field_all = self.update_topology(mesh, field_all, update=False, index=index)
+            # print(f'debug in remesh_input mesh {mesh} field_all {field_all}')
+            return self.to_graph(mesh, mask_all, field_all, field_tgt, scale=scale, update=False)
 
 
     #### @classmethod
@@ -435,19 +445,32 @@ if __name__ == '__main__':
     mesh, typ, field, target, edges = compatible_run_tf(state.to_graph())
     plot_amr(mesh, field, edges)
 
+    print('\n********************')
+    for buffer in (0, 1):
+        print('Testing TRAINING job remesh_input buffer=', buffer)
+        state = amr_state_variables(dim, np.full(dim, N), np.full(dim, N0), phis[0], refine_threshold=3e-4, buffer=buffer)
+        for i in (3,6,9):
+            mesh, typ, field, target, edges = compatible_run_tf(state.remesh_input(state.mesh, phis[i], phis[i], input_dense=True))
+            plot_amr(mesh, field, edges)
+            plot_amr(mesh, target, edges)
 
     print('\n********************')
     for buffer in (0, 1):
-        print('Testing remesh_input buffer=', buffer)
+        print('Testing EVAL job remesh_input buffer=', buffer)
         state = amr_state_variables(dim, np.full(dim, N), np.full(dim, N0), phis[0], refine_threshold=3e-4, buffer=buffer)
-        for i in (2,5):
-            mesh, typ, field, target, edges = compatible_run_tf(state.remesh_input(mesh, phis[i], tf.sqrt(phis[i+1]), input_dense=True))
+        mesh = state.mesh # all mesh
+        field = tf.reshape(phis[0], (-1,1))
+        refine_index = state.refine_index; coarse_index = state.coarse_index
+        for i in (3,6,9):
+            mesh, typ, field, target, edges, refine_index, coarse_index = compatible_run_tf(state.remesh_input(mesh, field, phis[i],
+              refine_index=refine_index, coarse_index=coarse_index, input_dense=False, index=True))
             plot_amr(mesh, field, edges)
-
+            plot_amr(mesh, target, edges)
+            field = tf.gather_nd(phis[i], tf.cast(mesh,tf.int32))
 
     for buffer in (0, 1):
         print('\n********************')
-        print('Testing adapting to new values in a loop buffer=', buffer)
+        print('Testing adapting to new values in a loop by updating interval variables implicitly buffer=', buffer)
         state = amr_state_variables(dim, np.full(dim, N), np.full(dim, N0), phis[0], refine_threshold=3e-4, buffer=buffer)
         start = time.time()
         state.update_topology()

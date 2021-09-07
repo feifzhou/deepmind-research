@@ -71,7 +71,7 @@ def main(unused_argv):
   axs = axs.flatten()
   plt.subplots_adjust(0,0,0.95, 0.95, -0.08, -0.08)
   skip = FLAGS.skip
-  num_steps = rollout_data[0]['gt_velocity'].shape[0]
+  num_steps = len(rollout_data[0]['gt_velocity'])
   num_frames_per_rollout = (num_steps-1) // skip + 1
   num_frames = len(rollout_data) * num_frames_per_rollout
   cell_size = np.max(rollout_data[0]['mesh_pos'][0],0) - np.min(rollout_data[0]['mesh_pos'][0],0)
@@ -80,9 +80,12 @@ def main(unused_argv):
   # compute bounds
   bounds = []
   for trajectory in rollout_data:
-    bb_min = trajectory['gt_velocity'].min(axis=(0, 1))
-    bb_max = trajectory['gt_velocity'].max(axis=(0, 1))
+    # bb_min = trajectory['gt_velocity'].min(axis=(0, 1))
+    # bb_max = trajectory['gt_velocity'].max(axis=(0, 1))
+    bb_min = np.concatenate(trajectory['gt_velocity']).min(axis=(0))
+    bb_max = np.concatenate(trajectory['gt_velocity']).max(axis=(0))
     bounds.append((bb_min, bb_max))
+  print(f'debug num_steps {num_steps} num_frames_per_rollout {num_frames_per_rollout} num_frames {num_frames}  cell_size {cell_size} cutoff {cutoff} bounds {bounds}')
 
   def remove_boundary_face(faces, pos, cutoff):
     edges = itertools.combinations(range(len(faces[0])), 2)

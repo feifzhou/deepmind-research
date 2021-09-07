@@ -31,7 +31,7 @@ class NodeType(enum.IntEnum):
   SIZE = 9
 
 
-def triangles_to_edges(faces):
+def triangles_to_edges(faces, unique_op=True):
   """Computes mesh edges from triangles."""
   if faces.shape[-1] == 3:
   # collect edges from triangles
@@ -46,12 +46,16 @@ def triangles_to_edges(faces):
   # those edges are sometimes duplicated (within the mesh) and sometimes
   # single (at the mesh boundary).
   # sort & pack edges as single tf.int64
-  receivers = tf.reduce_min(edges, axis=1)
-  senders = tf.reduce_max(edges, axis=1)
-  packed_edges = tf.bitcast(tf.stack([senders, receivers], axis=1), tf.int64)
-  # remove duplicates and unpack
-  unique_edges = tf.bitcast(tf.unique(packed_edges)[0], tf.int32)
-  senders, receivers = tf.unstack(unique_edges, axis=1)
+  if unique_op:
+    receivers = tf.reduce_min(edges, axis=1)
+    senders = tf.reduce_max(edges, axis=1)
+    packed_edges = tf.bitcast(tf.stack([senders, receivers], axis=1), tf.int64)
+    # remove duplicates and unpack
+    unique_edges = tf.bitcast(tf.unique(packed_edges)[0], tf.int32)
+    senders, receivers = tf.unstack(unique_edges, axis=1)
+  else:
+    receivers = edges[:,0]
+    senders = edges[:,1]
   # create two-way connectivity
   return (tf.concat([senders, receivers], axis=0),
           tf.concat([receivers, senders], axis=0))

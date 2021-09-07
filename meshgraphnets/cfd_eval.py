@@ -45,7 +45,7 @@ def _rollout(model, initial_state, num_steps):
   return output.stack()
 
 
-def evaluate(model, inputs):
+def evaluate(model, inputs, **kwargs):
   """Performs model rollouts and create stats."""
   initial_state = {k: v[0] for k, v in inputs.items()}
   num_steps = inputs['cells'].shape[0]

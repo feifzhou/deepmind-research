@@ -93,7 +93,7 @@ done
 ## random triangle vs ordered triangle vs no-diagonal vs all diagonal
 device=0
 noise=0.02
-for tri in 'square_1-1' 'square_11' 'square_X' 'square_justNN'; do
+for tri in 'square_1-1' 'square_11' 'square_X' 'square_justNN' 'square_justNN_noduplicate'; do
     tag=grain-noise_${noise}_tri_${tri}
     DIR=meshgraphnets/experiment/$tag
     DAT=$HOME/data/grain/$tri
@@ -120,4 +120,24 @@ CUDA_VISIBLE_DEVICES=1 python -m meshgraphnets.run_model --model=NPS \
   --mode=train --periodic=1 --nfeat_in=1 --nfeat_out=1 --num_training_steps=300000 --batch=8 --lr=4e-4 --lr_decay=100000 --checkpoint_dir=$DIR \
   --dataset_dir=$HOME/data/grain/square_justNN --noise=0.02 --rollout_split=test --rollout_path=$DIR/rollout.pkl --num_rollouts=1 \
   --amr_N=64 --amr_N1=2 --amr_buffer=0 --amr_threshold=1e-3
+
+#################
+## testing dataset with no duplicate edges, no AMR
+export DIR=meshgraphnets/experiment/grain-noise_0.02_tri_square_justNN
+CUDA_VISIBLE_DEVICES=1 python -m meshgraphnets.run_model --model=NPS \
+  --mode=eval --periodic=1 --nfeat_in=1 --nfeat_out=1 --num_training_steps=300000 --batch=8 --lr=4e-4 --lr_decay=100000 --checkpoint_dir=$DIR \
+  --dataset_dir=$HOME/data/grain/square_justNN_noduplicate --noise=0.02 --rollout_split=test --rollout_path=$DIR/rollout.pkl --num_rollouts=10 \
+  --amr_N=64 --amr_N1=1 --amr_buffer=0 --amr_threshold=1e-3
+CUDA_VISIBLE_DEVICES=1 python -m meshgraphnets.run_model --model=NPS \
+  --mode=eval --periodic=1 --nfeat_in=1 --nfeat_out=1 --num_training_steps=300000 --batch=8 --lr=4e-4 --lr_decay=100000 --checkpoint_dir=$DIR \
+  --dataset_dir=$HOME/data/grain/square_justNN --noise=0.02 --rollout_split=test --rollout_path=$DIR/rollout.pkl --num_rollouts=10 \
+  --amr_N=64 --amr_N1=1 --amr_buffer=0 --amr_threshold=1e-3
+
+#################
+## disable tf.unique op in building edges
+export DIR=meshgraphnets/experiment/grain-noise_0.02_tri_square_justNN
+CUDA_VISIBLE_DEVICES=1 python -m meshgraphnets.run_model --model=NPS --unique_op=false \
+ --mode=eval --periodic=1 --nfeat_in=1 --nfeat_out=1 --num_training_steps=300000 --batch=8 --lr=4e-4 --lr_decay=100000 --checkpoint_dir=$DIR \
+ --dataset_dir=$HOME/data/grain/square_justNN_noduplicate --noise=0.02 --rollout_split=test --rollout_path=$DIR/rollout.pkl --num_rollouts=10 \
+ --amr_N=64 --amr_N1=1 --amr_buffer=0 --amr_threshold=1e-3
 

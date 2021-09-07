@@ -38,6 +38,8 @@ def cell2graph(a, grid_len, typ, pbc=False):
             partitions = np.array([[[[0,0],[1,0]],[[1,0],[1,1]],[[1,1],[0,1]],[[0,1],[0,0]],[[0,0],[1,1]],[[0,1],[1,0]]]])
         elif typ=='square_justNN':
             partitions = np.array([[[[0,0],[1,0]],[[1,0],[1,1]],[[1,1],[0,1]],[[0,1],[0,0]]]])
+        elif typ=='square_justNN_noduplicate': # can skip tf.unique in graph generation; not safe without periodic boundary condition
+            partitions = np.array([[[[0,0],[1,0]],[[0,0],[0,1]]]])
         else:
             raise ValueError(f'ERROR type {typ} not recognized')
     elif dim == 1:
@@ -48,6 +50,8 @@ def cell2graph(a, grid_len, typ, pbc=False):
             [[0,0,0],[0,1,1],[1,1,0],[0,1,0]],[[0,1,1],[1,0,1],[1,1,0],[1,1,1]]#,[[0,0,0],[1,0,1],[0,1,1],[1,1,0]]
           ])
         partitions = np.stack([partitions, np.abs(partitions-np.array([[[0,0,1]]]))], 0)
+        if typ=='cube_justNN_noduplicate':
+            partitions = np.array([[[[0,0,0],[1,0,0]],[[0,0,0],[0,1,0]],[[0,0,0],[0,0,1]]]])
     cells = np.concatenate([ij + get_partitions() for ij in corner[:,None,None,:]])
     cells = np.mod(cells, shape)
     cells = np.dot(cells, np.cumprod((1,)+shape[:-1])).astype('int32')

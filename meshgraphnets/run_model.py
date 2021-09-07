@@ -23,6 +23,7 @@ from absl import logging
 import numpy as np
 import tensorflow.compat.v1 as tf
 from meshgraphnets import cfd_eval
+from meshgraphnets import amr_eval
 from meshgraphnets import cfd_model
 from meshgraphnets import NPS_model
 from meshgraphnets import cloth_eval
@@ -53,6 +54,7 @@ flags.DEFINE_integer('n_mpassing', 15, 'num. of message passing')
 flags.DEFINE_integer('nlayer_mlp', 2, 'No. of layer in MLP')
 flags.DEFINE_float('noise', -1.0, 'noise magnitude')
 flags.DEFINE_integer('periodic', 0, 'NPS periodic boundary condition')
+flags.DEFINE_boolean('unique_op', True, help='Apply tf.unique operator in processing edges. Turn off to speed up but be sure the specified edges have no duplicates')
 flags.DEFINE_integer('batch', 4, 'batch size')
 flags.DEFINE_float('lr', 1e-4, 'learning rate')
 flags.DEFINE_integer('lr_decay', 5000000, help='Learning rate decay.')
@@ -127,7 +129,7 @@ def evaluator(model, params, data_name, rollout_path, mesher=None):
   ds = dataset.load_dataset(FLAGS.dataset_dir, data_name)
   ds = dataset.add_targets(ds, [params['field']], add_history=params['history'])
   inputs = tf.data.make_one_shot_iterator(ds).get_next()
-  scalar_op, traj_ops = params['evaluator'].evaluate(model, inputs)
+  scalar_op, traj_ops = params['evaluator'].evaluate(model, inputs, mesher=mesher)
   tf.train.create_global_step()
 
   with tf.train.MonitoredTrainingSession(
@@ -141,8 +143,10 @@ def evaluator(model, params, data_name, rollout_path, mesher=None):
       logging.info('Rollout trajectory %d', traj_idx)
       scalar_data, traj_data = sess.run([scalar_op, traj_ops])
       trajectories.append(traj_data)
-      error = traj_data['pred_velocity'] - traj_data['gt_velocity']
-      mse_list.append((error**2).mean(axis=1))
+      # error = traj_data['pred_velocity'] - traj_data['gt_velocity']
+      # mse_list.append((error**2).mean(axis=1))
+      error = [np.mean((traj_data['pred_velocity'][i] - traj_data['gt_velocity'][i])**2, axis=0) for i in range(len(traj_data['pred_velocity']))]
+      mse_list.append(error)
       scalars.append(scalar_data)
     for key in scalars[0]:
       logging.info('%s: %g', key, np.mean([x[key] for x in scalars]))
@@ -168,7 +172,7 @@ def main(argv):
       message_passing_steps=FLAGS.n_mpassing)
   if FLAGS.model in ['NPS']:
     model = params['model'].Model(learned_model, dim=FLAGS.dim, periodic=bool(FLAGS.periodic), nfeat_in=FLAGS.nfeat_in,
-    nfeat_out=nfeat_out)
+    nfeat_out=nfeat_out, unique_op=FLAGS.unique_op)
   else:
     model = params['model'].Model(learned_model)
   if FLAGS.amr_N1 > 1:
@@ -180,6 +184,7 @@ def main(argv):
       [FLAGS.amr_N//FLAGS.amr_N1]*FLAGS.dim,
       tf.zeros([FLAGS.amr_N**FLAGS.dim,1],dtype=tf.float32),
       refine_threshold=FLAGS.amr_threshold, buffer=FLAGS.amr_buffer)
+    params['evaluator'] = amr_eval
   else:
     mesher = None
   if FLAGS.mode == 'train':
