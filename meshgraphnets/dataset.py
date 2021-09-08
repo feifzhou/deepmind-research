@@ -81,6 +81,19 @@ def add_targets(ds, fields, add_history):
 
 def split_and_preprocess(ds, noise_field, noise_scale, noise_gamma):
   """Splits trajectories into frames, and adds training noise."""
+  ds = split(ds)
+  ds = add_training_noise(ds, noise_field, noise_scale, noise_gamma)
+  return ds
+
+
+def split(ds):
+  """Splits trajectories into frames."""
+  ds = ds.flat_map(tf.data.Dataset.from_tensor_slices)
+  return ds
+
+
+def add_training_noise(ds, noise_field, noise_scale, noise_gamma):
+  """Adds training noise."""
   def add_noise(frame):
     noise = tf.random.normal(tf.shape(frame[noise_field]),
                              stddev=noise_scale, dtype=tf.float32)
@@ -91,7 +104,6 @@ def split_and_preprocess(ds, noise_field, noise_scale, noise_gamma):
     frame['target|'+noise_field] += (1.0 - noise_gamma) * noise
     return frame
 
-  ds = ds.flat_map(tf.data.Dataset.from_tensor_slices)
   ds = ds.map(add_noise, num_parallel_calls=8)
   ds = ds.shuffle(10000)
   ds = ds.repeat(None)

@@ -90,11 +90,12 @@ def learner(model, params, mesher=None):
   if FLAGS.rotate:
     ds = ds.map(dataset.augment_by_rotation)
   ds = dataset.add_targets(ds, [params['field']], add_history=params['history'])
-  ds = dataset.split_and_preprocess(ds, noise_field=params['field'],
-                                    noise_scale=params['noise'] if FLAGS.noise<0 else FLAGS.noise,
-                                    noise_gamma=params['gamma'])
+  ds = dataset.split(ds)
   if mesher is not None:
     ds = dataset.remesh(ds, mesher, random_translate=False)
+  ds = dataset.add_training_noise(ds, noise_field=params['field'],
+                                    noise_scale=params['noise'] if FLAGS.noise<0 else FLAGS.noise,
+                                    noise_gamma=params['gamma'])
   ds = dataset.batch_dataset(ds, FLAGS.batch)
   inputs = tf.data.make_one_shot_iterator(ds).get_next()
 
