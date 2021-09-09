@@ -315,13 +315,13 @@ class amr_state_variables:
         if input_dense:
             # simply reshape
             field_all = tf.reshape(field_inp, self.shape_all+(1,))
+            field_tgt = tf.reshape(field_tgt, self.shape_all+(1,))
         else:
             field_all = self.update_field_from_graph(field_inp, mesh=mesh, update=False)
+            field_tgt = tf.transpose(tf.reshape(field_tgt, self.shape_all))[...,None]# if field_tgt is not None else field_tgt
         # ## field_tgt is always dense!!!
         # print(f'debug in remesh_input field_tgt {field_tgt}')
-        # field_tgt = tf.reshape(field_tgt, self.shape_all+(1,))# if field_tgt is not None else field_tgt
         # ## WARNING: temporary fix
-        field_tgt = tf.transpose(tf.reshape(field_tgt, self.shape_all))[...,None]# if field_tgt is not None else field_tgt
         # print(f'debug in remesh_input field_all {field_all} tgt {field_tgt} mesh {mesh}')
         if index:
             mask_all, mesh, field_all, refine_index, coarse_index = self.update_topology(mesh, field_all, refine_index=refine_index, coarse_index=coarse_index, update=False, index=index)
