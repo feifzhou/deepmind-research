@@ -16,36 +16,46 @@ def _rollout(model, initial_state, num_steps, mesher, field_gt):
   # mask = tf.logical_or(tf.equal(node_type, NodeType.NORMAL),
   #                      tf.equal(node_type, NodeType.OUTFLOW))
 
-  def step_fn(step, mesh, field, edges, refine_index, coarse_index, mesh_traj, field_traj, edge_traj, fgt_traj):
-    mesh, node_type, field, fgt, edges, refine_index, coarse_index =\
-      mesher.remesh_input(mesh, field, field_gt[step],
+  def step_fn(step, mesh, node_type, field, edges, refine_index, coarse_index, mesh_traj, field_traj, edge_traj, fgt_traj):
+
+    # do_mesh = lambda: mesher.remesh_input(mesh, field, field_gt[step],
+    #     refine_index=refine_index, coarse_index=coarse_index, input_dense=False, index=True)
+    # skip_mesh = lambda: (mesh, node_type, field, tf.gather_nd(tf.transpose(tf.reshape(field_gt[step],mesher.shape_all))[...,None],tf.cast(mesh,tf.int32)), edges, refine_index, coarse_index)
+    def do_mesh():
+      return mesher.remesh_input(mesh, field, field_gt[step],
         refine_index=refine_index, coarse_index=coarse_index, input_dense=False, index=True)
+
+    def skip_mesh():
+      return (mesh, node_type, field, tf.gather_nd(tf.transpose(tf.reshape(field_gt[step],mesher.shape_all))[...,None],tf.cast(mesh,tf.int32)), edges, refine_index, coarse_index)
+
+    mesh, node_type, field, fgt, edges, refine_index, coarse_index =\
+     tf.cond(tf.equal(step%mesher.eval_freq, 9990), do_mesh, skip_mesh)
+    mesh_traj = mesh_traj.write(step, mesh)
+    field_traj = field_traj.write(step, field)
+    edge_traj = edge_traj.write(step, edges)
+    fgt_traj = fgt_traj.write(step, fgt)
     prediction = model({**initial_state,
         'velocity': field, 'mesh_pos': mesh, 'node_type': node_type, 'cells': edges})
     # # don't update boundary nodes
     # next_velocity = tf.where(mask, prediction, velocity)
     field_next = prediction
-    mesh_traj = mesh_traj.write(step, mesh)
-    field_traj = field_traj.write(step, field)
-    edge_traj = edge_traj.write(step, edges)
-    fgt_traj = fgt_traj.write(step, fgt)
-    return step+1, mesh, field_next, edges, refine_index, coarse_index, mesh_traj, field_traj, edge_traj, fgt_traj
+    return step+1, mesh, node_type, field_next, edges, refine_index, coarse_index, mesh_traj, field_traj, edge_traj, fgt_traj
 
   def _read_fn(x):
     return [x.read(i) for i in range(num_steps)]
 
   i0 = tf.constant(0)
-  _, _,_,_,_,_, mesh_traj, field_traj, edge_traj, fgt_traj = tf.while_loop(
+  _, _,_,_,_,_,_, mesh_traj, field_traj, edge_traj, fgt_traj = tf.while_loop(
       cond=lambda step, *unused: tf.less(step, num_steps),
       body=step_fn,
-      loop_vars=(0, initial_state['mesh_pos'], initial_state['velocity'], initial_state['cells'],
+      loop_vars=(i0, initial_state['mesh_pos'], initial_state['node_type'], initial_state['velocity'], initial_state['cells'],
                  mesher.refine_index, mesher.coarse_index,
                  tf.TensorArray(tf.float32, num_steps, infer_shape=False),
                  tf.TensorArray(tf.float32, num_steps, infer_shape=False),
                  tf.TensorArray(tf.int32, num_steps, infer_shape=False),
                  tf.TensorArray(tf.float32, num_steps, infer_shape=False)),
       shape_invariants=(i0.get_shape(),
-        tf.TensorShape([None, mesher.dim]), tf.TensorShape([None, 1]),tf.TensorShape([None, 2]),
+        tf.TensorShape([None, mesher.dim]), tf.TensorShape([None, 1]), tf.TensorShape([None, 1]), tf.TensorShape([None, 2]),
         tf.TensorShape([None, 1]),tf.TensorShape([None, 1]),
         tf.TensorShape([]), tf.TensorShape([]), tf.TensorShape([]), tf.TensorShape([])),
       back_prop=False, swap_memory=True,
