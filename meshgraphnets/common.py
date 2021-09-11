@@ -59,3 +59,12 @@ def triangles_to_edges(faces, unique_op=True):
   # create two-way connectivity
   return (tf.concat([senders, receivers], axis=0),
           tf.concat([receivers, senders], axis=0))
+
+def mish(inputs):
+    return inputs * tf.math.tanh(tf.math.softplus(inputs))
+
+def get_activation(act_string):
+  if act_string == 'mish':
+    return mish
+  else:
+    return eval(f'tf.nn.{act_string}')

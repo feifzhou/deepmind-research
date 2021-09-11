@@ -20,6 +20,8 @@ import collections
 import functools
 import sonnet as snt
 import tensorflow.compat.v1 as tf
+from meshgraphnets.common import get_activation
+
 
 EdgeSet = collections.namedtuple('EdgeSet', ['name', 'features', 'senders',
                                              'receivers'])
@@ -81,17 +83,19 @@ class EncodeProcessDecode(snt.AbstractModule):
                latent_size,
                num_layers,
                message_passing_steps,
+               activation='relu',
                name='EncodeProcessDecode'):
     super(EncodeProcessDecode, self).__init__(name=name)
     self._latent_size = latent_size
     self._output_size = output_size
     self._num_layers = num_layers
     self._message_passing_steps = message_passing_steps
+    self.activation = get_activation(activation)
 
   def _make_mlp(self, output_size, layer_norm=True):
     """Builds an MLP."""
     widths = [self._latent_size] * self._num_layers + [output_size]
-    network = snt.nets.MLP(widths, activate_final=False)
+    network = snt.nets.MLP(widths, activate_final=False, activation=self.activation)
     if layer_norm:
       network = snt.Sequential([network, snt.LayerNorm()])
     return network

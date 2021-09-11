@@ -74,7 +74,7 @@ def main(unused_argv):
   num_steps = len(rollout_data[0]['gt_velocity'])
   num_frames_per_rollout = (num_steps-1) // skip + 1
   num_frames = len(rollout_data) * num_frames_per_rollout
-  cell_size = np.max(rollout_data[0]['mesh_pos'][0],0) - np.min(rollout_data[0]['mesh_pos'][0],0)
+  cell_size = np.max(rollout_data[0]['mesh_pos'][0],0) - np.min(rollout_data[0]['mesh_pos'][0],0) + 1
   cutoff = 0.6*np.max(cell_size)
 
   # compute bounds
@@ -85,7 +85,7 @@ def main(unused_argv):
     bb_min = np.concatenate(trajectory['gt_velocity']).min(axis=(0))
     bb_max = np.concatenate(trajectory['gt_velocity']).max(axis=(0))
     bounds.append((bb_min, bb_max))
-  print(f'debug num_steps {num_steps} num_frames_per_rollout {num_frames_per_rollout} num_frames {num_frames}  cell_size {cell_size} cutoff {cutoff} bounds {bounds}')
+  # print(f'debug num_steps {num_steps} num_frames_per_rollout {num_frames_per_rollout} num_frames {num_frames}  cell_size {cell_size} cutoff {cutoff} bounds {bounds}')
 
   def remove_boundary_face(faces, pos, cutoff):
     edges = itertools.combinations(range(len(faces[0])), 2)
@@ -116,7 +116,7 @@ def main(unused_argv):
         ax.set_title('%s traj %d step %d' % (['GT','PD'][col], traj, step))
       if FLAGS.colorbar:
           ax.colorbar(f_plot)
-      if FLAGS.mesh:
+      if FLAGS.mesh and (col>0):
         edges = rollout_data[traj]['faces'][step]
         lines = pos[edges]
         pbc_flag = np.where(np.linalg.norm(lines[:,0]-lines[:,1],axis=1)< cutoff)

@@ -35,7 +35,7 @@ def plot_amr(mesh, field, edges, colorbar=False):
 
 class amr_state_variables:
     # def __init__(self, dim, shape_all, shape0, mask1, mask1_where, field0, field1, shared_interface, shared_edge3d, mask_all, field_all, edge_all, type_all=None, refine_threshold=0.001, periodic=True):
-    def __init__(self, dim, shape_all, shape0, field_all, type_all=None, refine_threshold=0.001, periodic=True, buffer=0):
+    def __init__(self, dim, shape_all, shape0, field_all, type_all=None, refine_threshold=0.001, periodic=True, buffer=0, eval_freq=1):
         # """"
         #   shared_interface: flag of shape [shape0, dim, 2]
         #   shared_edge3d: [shape0, dim, dim, 2, 2]
@@ -78,6 +78,7 @@ class amr_state_variables:
         # self.shared_edge3d = shared_edge3d
         self.periodic = periodic
         self.buffer = buffer
+        self.eval_freq = eval_freq
         # self.n1 = mask1_where.shape[0]
         # self.n1_all = np.prod(shape0)
         # self.mask_all = mask_all

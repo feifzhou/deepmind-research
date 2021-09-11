@@ -22,6 +22,7 @@ from absl import flags
 from absl import logging
 import numpy as np
 import tensorflow.compat.v1 as tf
+tf.logging.set_verbosity(tf.logging.ERROR)
 from meshgraphnets import cfd_eval
 from meshgraphnets import amr_eval
 from meshgraphnets import cfd_model
@@ -55,6 +56,7 @@ flags.DEFINE_integer('nlayer_mlp', 2, 'No. of layer in MLP')
 flags.DEFINE_float('noise', -1.0, 'noise magnitude')
 flags.DEFINE_integer('periodic', 0, 'NPS periodic boundary condition')
 flags.DEFINE_boolean('unique_op', True, help='Apply tf.unique operator in processing edges. Turn off to speed up but be sure the specified edges have no duplicates')
+flags.DEFINE_string('mlp_activation', 'relu', 'Activation in MLP, e.g. relu')
 flags.DEFINE_integer('batch', 4, 'batch size')
 flags.DEFINE_float('lr', 1e-4, 'learning rate')
 flags.DEFINE_integer('lr_decay', 5000000, help='Learning rate decay.')
@@ -67,6 +69,7 @@ flags.DEFINE_boolean('randommesh', False, help='Data augmentation by generating 
 flags.DEFINE_integer('amr_N', 64, 'system size, i.e. how many (fine) grids totally')
 flags.DEFINE_integer('amr_N1', 1, 'how many (fine) grids to bin into one, 1 to disable')
 flags.DEFINE_integer('amr_buffer', 1, 'how many buffer grids (must be 0 or 1)')
+flags.DEFINE_integer('amr_eval_freq', 1, 'Call AMR in eval every this many times (default 1)')
 flags.DEFINE_float('amr_threshold', 1e-3, 'threshold to coarsen regions if values are close')
 
 
@@ -168,6 +171,7 @@ def main(argv):
   nfeat_out = params['size'] if FLAGS.nfeat_out<0 else FLAGS.nfeat_out
   learned_model = core_model.EncodeProcessDecode(
       output_size=nfeat_out,
+      activation=FLAGS.mlp_activation,
       latent_size=FLAGS.nfeat_latent,
       num_layers=FLAGS.nlayer_mlp,
       message_passing_steps=FLAGS.n_mpassing)
@@ -184,7 +188,7 @@ def main(argv):
     mesher = amr.amr_state_variables(FLAGS.dim, [FLAGS.amr_N]*FLAGS.dim,
       [FLAGS.amr_N//FLAGS.amr_N1]*FLAGS.dim,
       tf.zeros([FLAGS.amr_N**FLAGS.dim,1],dtype=tf.float32),
-      refine_threshold=FLAGS.amr_threshold, buffer=FLAGS.amr_buffer)
+      refine_threshold=FLAGS.amr_threshold, buffer=FLAGS.amr_buffer, eval_freq=FLAGS.amr_eval_freq)
     params['evaluator'] = amr_eval
   else:
     mesher = None
