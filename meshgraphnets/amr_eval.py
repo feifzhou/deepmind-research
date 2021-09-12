@@ -29,7 +29,7 @@ def _rollout(model, initial_state, num_steps, mesher, field_gt):
       return (mesh, node_type, field, tf.gather_nd(tf.transpose(tf.reshape(field_gt[step],mesher.shape_all))[...,None],tf.cast(mesh,tf.int32)), edges, refine_index, coarse_index)
 
     mesh, node_type, field, fgt, edges, refine_index, coarse_index =\
-     tf.cond(tf.equal(step%mesher.eval_freq, 9990), do_mesh, skip_mesh)
+     tf.cond(tf.equal(step%mesher.eval_freq, 0), do_mesh, skip_mesh)
     mesh_traj = mesh_traj.write(step, mesh)
     field_traj = field_traj.write(step, field)
     edge_traj = edge_traj.write(step, edges)
