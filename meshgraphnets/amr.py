@@ -232,7 +232,7 @@ class amr_state_variables:
         mask_all = self.get_mask(refine_index)
         mesh = tf.where(mask_all)
         # print(f'debug update mesh {self.mesh.shape} {self.mask_all.shape}')
-        print(f'Updates: coarsened/fine= {nrefine_old-tf.size(refine_in_refine_index)}/{nrefine_old}, refined/coarse={tf.size(refine_in_coarse_index)}/{ncoarse_old}, NEW fine= {tf.size(refine_index)} mesh= {mesh.shape[0]}')
+        # print(f'Updates: coarsened/fine= {nrefine_old-tf.size(refine_in_refine_index)}/{nrefine_old}, refined/coarse={tf.size(refine_in_coarse_index)}/{ncoarse_old}, NEW fine= {tf.size(refine_index)} mesh= {mesh.shape[0]}')
         # self.get_valid_edges()
         if update:
             self.mask_all = mask_all

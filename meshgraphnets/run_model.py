@@ -114,6 +114,7 @@ def learner(model, params, mesher=None):
   train_op = tf.cond(tf.less(global_step, 1000),
                      lambda: tf.group(tf.assign_add(global_step, 1)),
                      lambda: tf.group(train_op))
+  valid_op, nvalid = evaluator(model, params, 'valid', None, mesher, return_valid=True)
 
   with tf.train.MonitoredTrainingSession(
       hooks=[tf.train.StopAtStepHook(last_step=FLAGS.num_training_steps)],
@@ -124,17 +125,30 @@ def learner(model, params, mesher=None):
       _, step, loss = sess.run([train_op, global_step, loss_op])
       if step % 1000 == 0:
         logging.info('Step %d: Loss %g', step, loss)
+      if step % 10000 == 0:
+        logging.info(f'Validating {nvalid}')
+        validation_err = [list(sess.run([valid_op])[0].values()) for _ in range(nvalid)]
+        logging.info(f'  validation err {np.mean(validation_err,0)}')
     logging.info('Training complete.')
-  evaluator(model, params, 'valid', None)
+  evaluator(model, params, 'valid', None, mesher)
 
 
-def evaluator(model, params, data_name, rollout_path, mesher=None):
+def evaluator(model, params, data_name, rollout_path, mesher=None, return_valid=False):
   """Run a model rollout trajectory."""
+  nvalid = 0
+  for _ in tf.python_io.tf_record_iterator(f"{FLAGS.dataset_dir}/{data_name}.tfrecord"): nvalid += 1
   ds = dataset.load_dataset(FLAGS.dataset_dir, data_name)
   ds = dataset.add_targets(ds, [params['field']], add_history=params['history'])
+  if return_valid:
+    ds = ds.repeat(None)
   inputs = tf.data.make_one_shot_iterator(ds).get_next()
   scalar_op, traj_ops = params['evaluator'].evaluate(model, inputs, mesher=mesher)
-  tf.train.create_global_step()
+  if return_valid:
+    return scalar_op, nvalid
+  try:
+    tf.train.create_global_step()
+  except:
+    pass
 
   with tf.train.MonitoredTrainingSession(
       checkpoint_dir=FLAGS.checkpoint_dir,
