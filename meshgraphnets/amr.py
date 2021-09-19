@@ -47,6 +47,7 @@ class amr_state_variables:
         self.ijk2int = tf.convert_to_tensor([shape_all[1],1] if dim==2 else [shape_all[1]*shape_all[2],shape_all[2],1], dtype=tf.int64)
         # edge_all = tf.tensordot(edge_all, ijk2int, 1)
         self.shape0 = tuple(shape0)
+        shape0 = np.array(shape0)
         self.n0 = np.prod(shape0)
         shape1 = np.array(shape_all) // np.array(shape0)
         self.shape1 = tuple(shape1)
@@ -54,12 +55,13 @@ class amr_state_variables:
         assert np.all(np.array(shape_all) == (np.array(shape0)*shape1)), 'Incompatible shapes'
         self.interpolator1 = tf.constant(linear_interp_coeff(self.shape1).astype(np.float32))
         # mesh0 = np.reshape(np.stack(np.meshgrid(*[np.arange(0,shape_all[d],shape1[d]) for d in range(dim)], indexing='ij'),-1), (-1, dim))
-        mesh0 = grid_points(np.array(shape0)-1)*shape1
+        mesh0_0 = grid_points(shape0-1)
+        mesh0 = mesh0_0*shape1
         self.mesh0 = tf.convert_to_tensor(mesh0)
         # indices_per1_corner = np.reshape(np.stack(np.meshgrid(*[[0,N] for N in shape1], indexing='ij'),-1), (1,-1, dim))
         indices_per1_corner = grid_points([1]*dim)*shape1
         self.n_per1_corner = 2**dim
-        self.mesh0_corner = tf.convert_to_tensor(((mesh0[:,None] + indices_per1_corner) % shape_all).reshape((-1,dim)))
+        # self.mesh0_corner = tf.convert_to_tensor(((mesh0[:,None] + indices_per1_corner) % shape_all).reshape((-1,dim)))
         self.mesh0_corner_ = tf.convert_to_tensor(((mesh0[:,None] + indices_per1_corner) % shape_all))
         # indices_per1_whole = np.reshape(np.stack(np.meshgrid(*[np.arange(N+1) for N in shape1], indexing='ij'),-1), (1,-1, dim))
         indices_per1_whole = grid_points(shape1)
@@ -93,7 +95,8 @@ class amr_state_variables:
         indices_neighbor = np.stack([np.zeros((dim,dim)),np.eye(dim)], 1) # shape [dim, 2, dim]
         self.edges_all = tf.convert_to_tensor(((mesh_all[:,None,None] + indices_neighbor) % shape_all).reshape((-1,2,dim)))
         self.indices_neighbor = tf.constant(np.eye(dim,dtype=np.int64)[None,...]) # shape [dim, dim]
-        self.indices_neighbor_alldir = tf.constant((grid_points([2]*dim)-1).reshape(1,-1,dim)) # all points made from [-1,0,1]
+        indices_neighbor_alldir = (grid_points([2]*dim)-1).reshape(1,-1,dim) # all points made from [-1,0,1]
+        self.mesh0_nbcell = tf.constant((mesh0_0[:,None,...] + indices_neighbor_alldir) % self.shape0)
         self.indices_neighbor_level0 = tf.constant(np.diag(shape1)[None,...]) # shape [dim, dim]
         mask_all = np.ones(self.shape_all, dtype=np.int32)
         self.mask_all = tf.convert_to_tensor(mask_all)
@@ -202,15 +205,10 @@ class amr_state_variables:
         if self.buffer == 0:
             refine_flag = tf.scatter_nd(refine_index, tf.fill([tf.size(refine_index)], True), [self.n0])
         elif self.buffer == 1:
-            flagged = int2digits(refine_index, self.shape0)
-            # plt.scatter(*(flagged.numpy()[:,0,:].T)); plt.show()
-            # print(f'debug', flagged, self.indices_neighbor_alldir)
-            # flagged = tf.reshape(flagged[:,None,:] + self.indices_neighbor_alldir, (-1, self.dim)) % self.shape0
-            flagged = tf.reshape(flagged + self.indices_neighbor_alldir, (-1, self.dim)) % self.shape0
-            # plt.scatter(*(flagged.numpy()[:,:].T)); plt.show()
-            # old_refne_index = self.refine_index
-            refine_index = (tf.unique(digits2int(flagged, self.shape0))[0])[:,None]
+            flagged = tf.reshape(tf.gather_nd(self.mesh0_nbcell, refine_index), (-1, self.dim))
+            refine_index = digits2int(flagged, self.shape0)[:,None]
             refine_flag = tf.scatter_nd(refine_index, tf.fill([tf.size(refine_index)], True), [self.n0])
+            refine_index = tf.where(refine_flag)
             refine_idx = tf.where(tf.gather_nd(refine_flag, coarse_index))
             refine_in_coarse_index = tf.gather(coarse_index, refine_idx)
         else:
