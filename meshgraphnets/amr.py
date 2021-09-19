@@ -65,10 +65,9 @@ class amr_state_variables:
         self.mesh0_corner_ = tf.convert_to_tensor(((mesh0[:,None] + indices_per1_corner) % shape_all))
         # indices_per1_whole = np.reshape(np.stack(np.meshgrid(*[np.arange(N+1) for N in shape1], indexing='ij'),-1), (1,-1, dim))
         indices_per1_whole = grid_points(shape1)
-        self.indices_per1_whole = tf.convert_to_tensor(indices_per1_whole)
+        self.indices_per1_whole = tf.constant(indices_per1_whole)
         self.n_per1_whole = indices_per1_whole.shape[-2]
-        self.mesh0_whole = tf.convert_to_tensor(((mesh0[:,None] + indices_per1_whole) % shape_all).reshape((-1,dim)))
-        self.mesh0_whole_ = tf.convert_to_tensor(((mesh0[:,None] + indices_per1_whole) % shape_all))
+        self.mesh0_whole = tf.convert_to_tensor(((mesh0[:,None] + indices_per1_whole) % shape_all))
         # print(f'debug mesh0 {self.mesh0.shape} mesh0corner {self.mesh0_corner.shape} mesh0_whole {self.mesh0_whole.shape}')
         self.field_all = tf.convert_to_tensor(field_all)
         assert self.field_all.shape[-1] == 1, ValueError(f'Only one field implemented so far, got {self.field_all.shape[-1]}')
@@ -95,6 +94,7 @@ class amr_state_variables:
         indices_neighbor = np.stack([np.zeros((dim,dim)),np.eye(dim)], 1) # shape [dim, 2, dim]
         self.edges_all = tf.convert_to_tensor(((mesh_all[:,None,None] + indices_neighbor) % shape_all).reshape((-1,2,dim)))
         self.indices_neighbor = tf.constant(np.eye(dim,dtype=np.int64)[None,...]) # shape [dim, dim]
+#        self.indices_neighbor_alldir = tf.constant((grid_points([2]*dim)-1).reshape(1,-1,dim)) # all points made from [-1,0,1]
         indices_neighbor_alldir = (grid_points([2]*dim)-1).reshape(1,-1,dim) # all points made from [-1,0,1]
         self.mesh0_nbcell = tf.constant((mesh0_0[:,None,...] + indices_neighbor_alldir) % self.shape0)
         self.indices_neighbor_level0 = tf.constant(np.diag(shape1)[None,...]) # shape [dim, dim]
@@ -148,7 +148,8 @@ class amr_state_variables:
         # intp_val = tf.reshape(tf.tensordot(tf.gather_nd(field0, refine_idx), self.interpolator1, 1), (-1,1))
         # print(f'debug refine_in_coarse_index {refine_in_coarse_index.shape} tf.gather_nd(self.field_all, refine_in_coarse_index) {tf.gather_nd(self.field_all, refine_in_coarse_index).shape}')
         intp_val = tf.reshape(tf.tensordot(tf.gather_nd(field0, refine_idx), self.interpolator1, 1), (-1,1))
-        intp_index = tf.reshape(((int2digits(tf.reshape(refine_in_coarse_index,[-1]), self.shape0)*self.shape1)[:,None,:] + self.indices_per1_whole) % self.shape_all, (-1,self.dim))
+        # intp_index = tf.reshape(((int2digits(tf.reshape(refine_in_coarse_index,[-1]), self.shape0)*self.shape1)[:,None,:] + self.indices_per1_whole) % self.shape_all, (-1,self.dim))
+        intp_index = tf.reshape(tf.gather_nd(self.mesh0_whole, refine_in_coarse_index), (-1,self.dim))
         # print(f'debug refine_in_coarse refine_idx intp_index {refine_in_coarse.shape} { refine_idx.shape} { intp_index.shape} ')
         # intp_val = tf.reshape(tf.tensordot(tf.gather_nd(field0, refine_in_coarse), self.interpolator1, 1), self.shape1_plus1)
         # print(f'debug inptval {intp_val.shape} intpidx {intp_index.shape} all {self.field_all.shape} tf.gather_nd(field0, refine_idx), self.interpolator1 {tf.gather_nd(field0, refine_idx).shape } {self.interpolator1.shape}')
@@ -160,11 +161,11 @@ class amr_state_variables:
 
 
     def get_mask(self, refine_index):
-        # refine_index = self.refine_index if refine_index is None else refine_index
-        # valid = tf.where(tf.reshape(self.refine_flag, self.shape0))
-        valid0 = int2digits(refine_index, self.shape0)
-        # print(f'debug valid0 {valid0}')
-        valid0 = tf.reshape((valid0*self.shape1 + self.indices_per1_whole) % self.shape_all, (-1,self.dim))
+        ## refine_index = self.refine_index if refine_index is None else refine_index
+        ## valid = tf.where(tf.reshape(self.refine_flag, self.shape0))
+        # valid0 = int2digits(refine_index, self.shape0)
+        # valid0 = tf.reshape((valid0*self.shape1 + self.indices_per1_whole) % self.shape_all, (-1,self.dim))
+        valid0 = tf.reshape(tf.gather_nd(self.mesh0_whole, refine_index), (-1,self.dim))
         mask_all = tf.tensor_scatter_nd_update(self.mask_all_0, valid0, tf.ones(tf.shape(valid0)[0], dtype=tf.int32))
         return mask_all
         # mask_all = tf.scatter_nd_update(valid, tf.ones(valid.shape[0], dtype=tf.int32), self.shape_all)
@@ -181,7 +182,7 @@ class amr_state_variables:
         ncoarse_old = tf.size(coarse_index)
         # which of fine mesh0 to coarsen?
         # refine_index = tf.where(self.refine_flag)
-        field1 = tf.reshape(tf.gather_nd(field_all, tf.reshape(tf.gather_nd(self.mesh0_whole_, refine_index),(-1,self.dim))), (-1,self.n_per1_whole))
+        field1 = tf.reshape(tf.gather_nd(field_all, tf.reshape(tf.gather_nd(self.mesh0_whole, refine_index),(-1,self.dim))), (-1,self.n_per1_whole))
         coarse_in_refine = (tf.math.reduce_max(field1,1) - tf.math.reduce_min(field1,1)) <= self.refine_threshold
         refine_in_refine_index = tf.gather(refine_index, tf.where(tf.logical_not(coarse_in_refine)))
 
@@ -205,6 +206,9 @@ class amr_state_variables:
         if self.buffer == 0:
             refine_flag = tf.scatter_nd(refine_index, tf.fill([tf.size(refine_index)], True), [self.n0])
         elif self.buffer == 1:
+#            flagged = int2digits(refine_index, self.shape0)
+#            flagged = tf.reshape(flagged + self.indices_neighbor_alldir, (-1, self.dim)) % self.shape0
+#            refine_index = (tf.unique(digits2int(flagged, self.shape0))[0])[:,None]
             flagged = tf.reshape(tf.gather_nd(self.mesh0_nbcell, refine_index), (-1, self.dim))
             refine_index = digits2int(flagged, self.shape0)[:,None]
             refine_flag = tf.scatter_nd(refine_index, tf.fill([tf.size(refine_index)], True), [self.n0])
