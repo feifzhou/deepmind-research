@@ -60,7 +60,7 @@ flags.DEFINE_string('mlp_activation', 'relu', 'Activation in MLP, e.g. relu')
 flags.DEFINE_integer('batch', 4, 'batch size')
 flags.DEFINE_float('lr', 1e-4, 'learning rate')
 flags.DEFINE_integer('lr_decay', 5000000, help='Learning rate decay.')
-flags.DEFINE_boolean('rotate', False, help='Data augmentation by rotation')
+flags.DEFINE_enum('rotate', None, ['SO', 'cubic', ''], help='Data augmentation by pointgroup operation')
 flags.DEFINE_boolean('cache', False, help='Cache whole dataset into memory')
 flags.DEFINE_boolean('randommesh', False, help='Data augmentation by generating random points and associated mesh')
 # flags.DEFINE_float('random_lower', 0.3, 'ratio of selected points: lower bound')
@@ -90,17 +90,19 @@ def learner(model, params, mesher=None):
     ds = ds.cache()
   if FLAGS.randommesh:
     ds = ds.map(dataset.augment_by_randommesh, periodic=FLAGS.periodic)
-  if FLAGS.rotate:
-    ds = ds.map(dataset.augment_by_rotation)
   ds = dataset.add_targets(ds, [params['field']], add_history=params['history'])
   ds = dataset.split(ds)
+  if FLAGS.rotate:
+    ds = ds.map(dataset.augment_by_rotation(FLAGS.dim, FLAGS.rotate))
   if mesher is not None:
     ds = dataset.remesh(ds, mesher, random_translate=False)
   ds = dataset.add_training_noise(ds, noise_field=params['field'],
                                     noise_scale=params['noise'] if FLAGS.noise<0 else FLAGS.noise,
                                     noise_gamma=params['gamma'])
   ds = dataset.batch_dataset(ds, FLAGS.batch)
-  inputs = tf.data.make_one_shot_iterator(ds).get_next()
+  # inputs = tf.data.make_one_shot_iterator(ds).get_next()
+  ds_iterator = tf.data.make_initializable_iterator(ds)
+  inputs = ds_iterator.get_next()
 
   loss_op = model.loss(inputs)
   global_step = tf.train.create_global_step()
@@ -121,6 +123,7 @@ def learner(model, params, mesher=None):
       checkpoint_dir=FLAGS.checkpoint_dir,
       save_checkpoint_secs=600) as sess:
 
+    sess.run(ds_iterator.initializer)
     while not sess.should_stop():
       _, step, loss = sess.run([train_op, global_step, loss_op])
       if step % 1000 == 0:
@@ -212,4 +215,10 @@ def main(argv):
     evaluator(model, params, FLAGS.rollout_split, FLAGS.rollout_path, mesher)
 
 if __name__ == '__main__':
+  try:
+    import sys;
+    with open(f"{FLAGS.checkpoint_dir}/command.txt", "a") as f:
+      f.write('Commandline\n', ' '.join(sys.argv))
+  except:
+    pass
   app.run(main)

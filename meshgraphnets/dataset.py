@@ -142,7 +142,7 @@ def batch_dataset(ds, batch_size):
   return ds
 
 
-def augment_by_rotation(inputs):
+def augment_by_rotation(dim, pointgroup='SO'):
   """Augment a single stack of inputs by rotation.
   Args:
     inputs
@@ -150,31 +150,49 @@ def augment_by_rotation(inputs):
     randomly rotated.
 
   """
-  print(f'debug inputs {inputs.__class__} {inputs}')
+  # dim_mesh = inputs['mesh_pos'].shape[-1]
   # cosine and sine of three angles
-  dim_mesh = inputs['mesh_pos'].shape[-1]
-  if dim_mesh == 3:
-    cs = tf.random.normal((3,2))
-    cs = tf.linalg.normalize(cs, axis=1)[0]
+  import math
+  sign = 1 # tf.cast(2*tf.random.uniform(shape=[], maxval=2, dtype=tf.int32)-1, tf.float32)
+  if dim == 3:
+    if pointgroup == 'SO':
+      cs = tf.random.normal((3,2))
+      cs = tf.linalg.normalize(cs, axis=1)[0]
+    elif pointgroup in ['Oh', 'cubic']:
+      cs = tf.cast(tf.random.uniform(shape=[3], maxval=4, dtype=tf.int32), tf.float32)*math.pi/4
+      cs = tf.stack([tf.cos(cs), tf.sin(cs)], 1) * sign
+    else:
+      raise ValueError(f'ERROR unknown pointgorup {pointgroup} in {dim}-D')
     rotation = tf.stack([cs[0,0]*cs[1,0], cs[0,0]*cs[1,1]*cs[2,1]-cs[0,1]*cs[2,0], cs[0,0]*cs[1,1]*cs[2,0]+cs[0,1]*cs[2,1],
                         cs[0,1]*cs[1,0], cs[0,1]*cs[1,1]*cs[2,1]+cs[0,0]*cs[2,0], cs[0,1]*cs[1,1]*cs[2,0]-cs[0,0]*cs[2,1],
                         -cs[1,1],        cs[1,0]*cs[2,1],                         cs[1,0]*cs[2,0]])
     rotation = tf.transpose(tf.reshape(rotation, (3,3)))
-  elif dim_mesh == 2:
-    cs = tf.random.normal((1,2))
-    cs = tf.linalg.normalize(cs, axis=1)[0]
-    rotation = tf.stack([cs[0,0], -cs[0,1],
-                         cs[0,1],  cs[0,0]])
-    rotation = tf.transpose(tf.reshape(rotation, (2,2)))
+  elif dim == 2:
+    if pointgroup == 'SO':
+      cs = tf.random.normal((1,2))
+      cs = tf.linalg.normalize(cs, axis=1)[0]
+    elif pointgroup in ['4m', 'cubic']:
+      cs = tf.cast(tf.random.uniform(shape=[], maxval=8, dtype=tf.int32), tf.float32)*math.pi/4
+      cs = tf.stack([tf.cos(cs), tf.sin(cs)*sign])
+    rotation = tf.stack([[cs[0], -cs[1]],
+                         [cs[1],  cs[0]]])
+    # rotation = tf.transpose(tf.reshape(rotation, (2,2)))
   else:
-    raise ValueError(f'WARNING rotation not implemented for dimension {dim_mesh}')
-  new_latt = tf.linalg.matmul(inputs['lattice'][0], rotation)
-  for key, val in inputs.items():
-    print(f'debug k {key} v {val}')
-    if key in ('mesh_pos','lattice'):
-      inputs[key] = tf.linalg.matmul(val, rotation)
-  inputs['inv_lattice'] = tf.linalg.inv(inputs['lattice'])
-  return inputs
+    raise ValueError(f'WARNING rotation not implemented for dimension {dim}')
+  # new_latt = tf.linalg.matmul(inputs['lattice'][0], rotation)
+
+  def _rotate(inputs):
+    print(f'debug inputs {inputs.__class__} {inputs}')
+    out = {}
+    for key, val in inputs.items():
+      print(f'debug k {key} v {val}')
+      if key in ('mesh_pos','lattice'):
+        out[key] = tf.linalg.matmul(val, rotation)
+      else:
+        out[key] = val
+    out['inv_lattice'] = tf.linalg.inv(out['lattice'])
+    return out
+  return _rotate
 
 
 def augment_by_randommesh(inputs, ratio):
