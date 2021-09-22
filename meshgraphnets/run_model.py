@@ -58,6 +58,7 @@ flags.DEFINE_integer('periodic', 0, 'NPS periodic boundary condition')
 flags.DEFINE_boolean('unique_op', True, help='Apply tf.unique operator in processing edges. Turn off to speed up but be sure the specified edges have no duplicates')
 flags.DEFINE_string('mlp_activation', 'relu', 'Activation in MLP, e.g. relu')
 flags.DEFINE_integer('batch', 4, 'batch size')
+flags.DEFINE_integer('keep_ckpt', -1, 'number of checkpoints to keep. -1 to default(5)')
 flags.DEFINE_float('lr', 1e-4, 'learning rate')
 flags.DEFINE_integer('lr_decay', 5000000, help='Learning rate decay.')
 flags.DEFINE_enum('rotate', None, ['SO', 'cubic', ''], help='Data augmentation by pointgroup operation')
@@ -121,7 +122,8 @@ def learner(model, params, mesher=None):
   with tf.train.MonitoredTrainingSession(
       hooks=[tf.train.StopAtStepHook(last_step=FLAGS.num_training_steps)],
       checkpoint_dir=FLAGS.checkpoint_dir,
-      save_checkpoint_secs=600) as sess:
+      scaffold=tf.train.Scaffold(saver=tf.train.Saver(max_to_keep=20)) if FLAGS.keep_ckpt>0 else None,
+      save_checkpoint_secs=2400) as sess:
 
     sess.run(ds_iterator.initializer)
     while not sess.should_stop():
@@ -184,6 +186,9 @@ def main(argv):
   del argv
   tf.enable_resource_variables()
   tf.disable_eager_execution()
+  import sys;
+  with open(f"{FLAGS.checkpoint_dir}/command.txt", "a") as f:
+      f.write(' '.join(sys.argv) + '\n')
   params = PARAMETERS[FLAGS.model]
   nfeat_out = params['size'] if FLAGS.nfeat_out<0 else FLAGS.nfeat_out
   learned_model = core_model.EncodeProcessDecode(
@@ -215,10 +220,4 @@ def main(argv):
     evaluator(model, params, FLAGS.rollout_split, FLAGS.rollout_path, mesher)
 
 if __name__ == '__main__':
-  try:
-    import sys;
-    with open(f"{FLAGS.checkpoint_dir}/command.txt", "a") as f:
-      f.write('Commandline\n', ' '.join(sys.argv))
-  except:
-    pass
   app.run(main)
