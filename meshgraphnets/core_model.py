@@ -84,7 +84,7 @@ class EncodeProcessDecode(snt.AbstractModule):
                num_layers,
                message_passing_steps,
                activation='relu',
-               name='EncodeProcessDecode'):
+               name='EncodeProcessDecode', **kwargs):
     super(EncodeProcessDecode, self).__init__(name=name)
     self._latent_size = latent_size
     self._output_size = output_size
@@ -123,3 +123,4 @@ class EncodeProcessDecode(snt.AbstractModule):
     for _ in range(self._message_passing_steps):
       latent_graph = GraphNetBlock(model_fn)(latent_graph)
     return self._decoder(latent_graph)
+

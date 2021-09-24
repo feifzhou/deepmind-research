@@ -46,6 +46,7 @@ flags.DEFINE_string('rollout_path', None,
 flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
                   'Dataset split to use for rollouts.')
 flags.DEFINE_integer('num_rollouts', 10, 'No. of rollout trajectories')
+flags.DEFINE_enum('evaluator', None, ['cfd_eval', 'cloth_eval', 'amr_eval', 'featureevolve_eval', 'amr_featureevolve_eval'], 'Select rollout method.')
 flags.DEFINE_integer('num_training_steps', int(10e6), 'No. of training steps')
 flags.DEFINE_integer('dim', 2, 'NPS dimension')
 flags.DEFINE_integer('nfeat_in', 1, 'nfeat_in')
@@ -56,6 +57,7 @@ flags.DEFINE_integer('nlayer_mlp', 2, 'No. of layer in MLP')
 flags.DEFINE_float('noise', -1.0, 'noise magnitude')
 flags.DEFINE_integer('periodic', 0, 'NPS periodic boundary condition')
 flags.DEFINE_boolean('unique_op', True, help='Apply tf.unique operator in processing edges. Turn off to speed up but be sure the specified edges have no duplicates')
+flags.DEFINE_integer('n_evolve', -1, help='If >0, change core model to preprocess-step')
 flags.DEFINE_string('mlp_activation', 'relu', 'Activation in MLP, e.g. relu')
 flags.DEFINE_integer('batch', 4, 'batch size')
 flags.DEFINE_integer('keep_ckpt', -1, 'number of checkpoints to keep. -1 to default(5)')
@@ -180,6 +182,10 @@ def evaluator(model, params, data_name, rollout_path, mesher=None, return_valid=
     if rollout_path:
       with open(rollout_path, 'wb') as fp:
         pickle.dump(trajectories, fp)
+    # variables_names = [v.name for v in tf.trainable_variables()]
+    # values = sess.run(tf.trainable_variables())
+    # for k, v in zip(variables_names, values):
+    #     print( "Variable: ", k, v.shape, v)
 
 
 def main(argv):
@@ -191,15 +197,22 @@ def main(argv):
       f.write(' '.join(sys.argv) + '\n')
   params = PARAMETERS[FLAGS.model]
   nfeat_out = params['size'] if FLAGS.nfeat_out<0 else FLAGS.nfeat_out
-  learned_model = core_model.EncodeProcessDecode(
+  if FLAGS.n_evolve > 0:
+    from meshgraphnets import featureevolve
+    core_model_type = featureevolve.FeatureEvolveDecode
+    # params['history'] = False # need previous state
+  else:
+    core_model_type = core_model.EncodeProcessDecode
+  learned_model = core_model_type(
       output_size=nfeat_out,
       activation=FLAGS.mlp_activation,
       latent_size=FLAGS.nfeat_latent,
       num_layers=FLAGS.nlayer_mlp,
+      evolve_steps=FLAGS.n_evolve,
       message_passing_steps=FLAGS.n_mpassing)
   if FLAGS.model in ['NPS']:
     model = params['model'].Model(learned_model, dim=FLAGS.dim, periodic=bool(FLAGS.periodic), nfeat_in=FLAGS.nfeat_in,
-    nfeat_out=nfeat_out, unique_op=FLAGS.unique_op)
+    nfeat_out=nfeat_out, unique_op=FLAGS.unique_op, evolve=(FLAGS.n_evolve > 0))
   else:
     model = params['model'].Model(learned_model)
   if FLAGS.amr_N1 > 1:
@@ -214,6 +227,21 @@ def main(argv):
     params['evaluator'] = amr_eval
   else:
     mesher = None
+  if FLAGS.evaluator is not None:
+    if FLAGS.evaluator == 'cfd_eval':
+      params['evaluator'] = cfd_eval
+    elif FLAGS.evaluator == 'cloth_eval':
+      params['evaluator'] = cloth_eval
+    elif FLAGS.evaluator == 'amr_eval':
+      params['evaluator'] = amr_eval
+    elif FLAGS.evaluator == 'featureevolve_eval':
+      from meshgraphnets import featureevolve_eval
+      params['evaluator'] = featureevolve_eval
+    elif FLAGS.evaluator == 'amr_featureevolve_eval':
+      from meshgraphnets import amr_featureevolve_eval
+      params['evaluator'] = amr_featureevolve_eval
+    else:
+      raise ValueError(f'ERROR: unknown evaluator {FLAGS.evaluator}')
   if FLAGS.mode == 'train':
     learner(model, params, mesher)
   elif FLAGS.mode == 'eval':

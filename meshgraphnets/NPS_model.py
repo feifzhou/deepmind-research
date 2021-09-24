@@ -31,10 +31,12 @@ def vector_pbc(vec, lattice, inv_lattice):
 class Model(snt.AbstractModule):
   """Model for fluid simulation."""
 
-  def __init__(self, learned_model, name='NPS', dim=2, periodic=False, nfeat_in=2, nfeat_out=2, unique_op=True):
+  def __init__(self, learned_model, name='NPS', dim=2, periodic=False, nfeat_in=2, nfeat_out=2,
+      unique_op=True, evolve=False):
     super(Model, self).__init__(name=name)
     self.dim=dim; self.periodic=bool(periodic); self.nfeat_in=nfeat_in; self.nfeat_out=nfeat_out
     self.unique_op = unique_op
+    self.evolve = evolve
     with self._enter_variable_scope():
       self._learned_model = learned_model
       self._output_normalizer = normalization.Normalizer(
@@ -78,10 +80,20 @@ class Model(snt.AbstractModule):
     return self._update(inputs, per_node_network_output)
 
   @snt.reuse_variables
+  def featurize(self, inputs):
+    graph = self._build_graph(inputs, is_training=False)
+    return self._learned_model.featurize(graph)
+
+  # @snt.reuse_variables
+  def step(self, inputs, latent_graph):
+    # return self._learned_model.step(latent_graph)
+    latent_new, per_node_network_output = self._learned_model.step(latent_graph)
+    return latent_new, self._update(inputs, per_node_network_output)
+
+  @snt.reuse_variables
   def loss(self, inputs):
     """L2 loss on velocity."""
     graph = self._build_graph(inputs, is_training=True)
-    network_output = self._learned_model(graph)
 
     # build target velocity change
     cur_velocity = inputs['velocity']
@@ -93,8 +105,33 @@ class Model(snt.AbstractModule):
     node_type = inputs['node_type'][:, 0]
     loss_mask = tf.logical_or(tf.equal(node_type, common.NodeType.NORMAL),
                               tf.equal(node_type, common.NodeType.OUTFLOW))
+    if self.evolve:
+      # latent0 = self._learned_model.preprocess(graph)
+      # network_output0 = self._learned_model._decoder(latent0)
+      # prev_normalized = self._output_normalizer(cur_velocity - inputs['prev|velocity'])
+      # error0 = tf.reduce_sum((prev_normalized - network_output0)**2, axis=1)
+      # loss0 = tf.reduce_mean(error0[loss_mask])
+      # network_output = self._learned_model.step(latent0)
+      z0 = self._learned_model.featurize(graph)
+      z0_1 = self._learned_model.evolve(z0)
+      noise = tf.random.normal(tf.shape(inputs['target|velocity']), stddev=0.01, dtype=tf.float32)
+      tgt_field = inputs['target|velocity'] + noise
+      inputs1 = {k:(v if k != 'velocity' else tgt_field) for k,v in inputs.items()}
+      graph1 = self._build_graph(inputs1, is_training=False)
+      z1 = self._learned_model.featurize(graph1)
+      error_node = tf.reduce_mean((z1.node_features - z0_1.node_features)**2, axis=1)
+      loss_node = tf.reduce_mean(error_node[loss_mask])
+      loss_edge = 0
+      for i in range(len(graph.edge_sets)):
+        loss_edge += tf.reduce_mean((z1.edge_sets[i].features - z0_1.edge_sets[i].features)**2)
+      loss_ae = loss_node + loss_edge
+      network_output = self._learned_model.decoder(z0_1)
+    else:
+      network_output = self._learned_model(graph)
     error = tf.reduce_sum((target_normalized - network_output)**2, axis=1)
     loss = tf.reduce_mean(error[loss_mask])
+    if self.evolve:
+      loss += loss_ae*0.1
     return loss
 
   def _update(self, inputs, per_node_network_output):
