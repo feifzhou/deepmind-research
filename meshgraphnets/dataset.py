@@ -182,10 +182,10 @@ def augment_by_rotation(dim, pointgroup='SO'):
   # new_latt = tf.linalg.matmul(inputs['lattice'][0], rotation)
 
   def _rotate(inputs):
-    print(f'debug inputs {inputs.__class__} {inputs}')
+    # print(f'debug inputs {inputs.__class__} {inputs}')
     out = {}
     for key, val in inputs.items():
-      print(f'debug k {key} v {val}')
+      # print(f'debug k {key} v {val}')
       if key in ('mesh_pos','lattice'):
         out[key] = tf.linalg.matmul(val, rotation)
       else:
