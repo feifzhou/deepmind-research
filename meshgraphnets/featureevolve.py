@@ -3,7 +3,7 @@ import functools
 import sonnet as snt
 import tensorflow.compat.v1 as tf
 
-from meshgraphnets.core_model import EncodeProcessDecode, GraphNetBlock
+from meshgraphnets.core_model import MultiGraph, EncodeProcessDecode, GraphNetBlock
 
 class FeatureEvolveDecode(EncodeProcessDecode):
   def __init__(self, *args, name='FeatureEvolveDecode', evolve_steps=3, **kwargs):
@@ -44,3 +44,10 @@ class FeatureEvolveDecode(EncodeProcessDecode):
   def step(self, latent_graph):
     latent_graph = self.evolve(latent_graph)
     return latent_graph, self.decoder(latent_graph)
+
+  @staticmethod
+  def add_latent_noise(latent_graph, scale):
+    new_node_features = latent_graph.node_features + tf.random.normal(tf.shape(latent_graph.node_features), stddev=scale, dtype=tf.float32)
+    new_edge_sets = [es._replace(features=es.features + tf.random.normal(tf.shape(es.features), stddev=scale, dtype=tf.float32))
+                     for es in latent_graph.edge_sets]
+    return MultiGraph(new_node_features, new_edge_sets)

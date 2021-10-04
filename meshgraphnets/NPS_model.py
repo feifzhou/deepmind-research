@@ -106,17 +106,12 @@ class Model(snt.AbstractModule):
     loss_mask = tf.logical_or(tf.equal(node_type, common.NodeType.NORMAL),
                               tf.equal(node_type, common.NodeType.OUTFLOW))
     if self.evolve:
-      # latent0 = self._learned_model.preprocess(graph)
-      # network_output0 = self._learned_model._decoder(latent0)
-      # prev_normalized = self._output_normalizer(cur_velocity - inputs['prev|velocity'])
-      # error0 = tf.reduce_sum((prev_normalized - network_output0)**2, axis=1)
-      # loss0 = tf.reduce_mean(error0[loss_mask])
-      # network_output = self._learned_model.step(latent0)
       z0 = self._learned_model.featurize(graph)
+      # add noise to latent features
+      z0 = self._learned_model.add_latent_noise(z0, 0.01)
       z0_1 = self._learned_model.evolve(z0)
-      noise = tf.random.normal(tf.shape(inputs['target|velocity']), stddev=0.01, dtype=tf.float32)
-      tgt_field = inputs['target|velocity'] + noise
-      inputs1 = {k:(v if k != 'velocity' else tgt_field) for k,v in inputs.items()}
+      # noise = tf.random.normal(tf.shape(inputs['target|velocity']), stddev=0.01, dtype=tf.float32)
+      inputs1 = {k:(v if k != 'velocity' else inputs['target|velocity']) for k,v in inputs.items()}
       graph1 = self._build_graph(inputs1, is_training=False)
       z1 = self._learned_model.featurize(graph1)
       error_node = tf.reduce_mean((z1.node_features - z0_1.node_features)**2, axis=1)
@@ -131,7 +126,7 @@ class Model(snt.AbstractModule):
     error = tf.reduce_sum((target_normalized - network_output)**2, axis=1)
     loss = tf.reduce_mean(error[loss_mask])
     if self.evolve:
-      loss += loss_ae*0.1
+      loss += loss_ae
     return loss
 
   def _update(self, inputs, per_node_network_output):
