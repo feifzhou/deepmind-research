@@ -13,7 +13,7 @@ We have released our top-performing models in two formats compatible with
 [JAX](https://github.com/google/jax) and [PyTorch](https://pytorch.org/).
 This repository also contains our model definitions.
 
-## Running the example code
+## Running the code
 
 ### Downloading a model
 
@@ -42,15 +42,40 @@ The following table contains the models from **Rebuffi et al., 2021**.
 | CIFAR-10 | &#8467;<sub>&infin;</sub> | 8 / 255 | WRN-106-16 | &#x2717; | 88.50% | 64.64% | [jax](https://storage.googleapis.com/dm-adversarial-robustness/cifar10_linf_wrn106-16_cutmix_ddpm_v2.npy), [pt](https://storage.googleapis.com/dm-adversarial-robustness/cifar10_linf_wrn106-16_cutmix_ddpm_v2.pt)
 | CIFAR-10 | &#8467;<sub>&infin;</sub> | 8 / 255 | WRN-70-16 | &#x2717; | 88.54% | 64.25% | [jax](https://storage.googleapis.com/dm-adversarial-robustness/cifar10_linf_wrn70-16_cutmix_ddpm_v2.npy), [pt](https://storage.googleapis.com/dm-adversarial-robustness/cifar10_linf_wrn70-16_cutmix_ddpm_v2.pt)
 | CIFAR-10 | &#8467;<sub>&infin;</sub> | 8 / 255 | WRN-28-10 | &#x2717; | 87.33% | 60.75% | [jax](https://storage.googleapis.com/dm-adversarial-robustness/cifar10_linf_wrn28-10_cutmix_ddpm_v2.npy), [pt](https://storage.googleapis.com/dm-adversarial-robustness/cifar10_linf_wrn28-10_cutmix_ddpm_v2.pt)
+| CIFAR-10 | &#8467;<sub>&infin;</sub> | 8 / 255 | ResNet-18 | &#x2717; | 83.53% | 56.66% | [jax](https://storage.googleapis.com/dm-adversarial-robustness/cifar10_linf_resnet18_ddpm.npy), [pt](https://storage.googleapis.com/dm-adversarial-robustness/cifar10_linf_resnet18_ddpm.pt)
 | CIFAR-10 | &#8467;<sub>2</sub> | 128 / 255 | WRN-70-16 | &#x2717; | 92.41% | 80.42% | [jax](https://storage.googleapis.com/dm-adversarial-robustness/cifar10_l2_wrn70-16_cutmix_ddpm_v2.npy), [pt](https://storage.googleapis.com/dm-adversarial-robustness/cifar10_l2_wrn70-16_cutmix_ddpm_v2.pt)
 | CIFAR-10 | &#8467;<sub>2</sub> | 128 / 255 | WRN-28-10 | &#x2717; | 91.79% | 78.80% | [jax](https://storage.googleapis.com/dm-adversarial-robustness/cifar10_l2_wrn28-10_cutmix_ddpm_v2.npy), [pt](https://storage.googleapis.com/dm-adversarial-robustness/cifar10_l2_wrn28-10_cutmix_ddpm_v2.pt)
+| CIFAR-10 | &#8467;<sub>2</sub> | 128 / 255 | ResNet-18 | &#x2717; | 90.33% | 75.86% | [jax](https://storage.googleapis.com/dm-adversarial-robustness/cifar10_l2_resnet18_cutmix_ddpm.npy), [pt](https://storage.googleapis.com/dm-adversarial-robustness/cifar10_l2_resnet18_cutmix_ddpm.pt)
 | CIFAR-100 | &#8467;<sub>&infin;</sub> | 8 / 255 | WRN-70-16 | &#x2717; | 63.56% | 34.64% | [jax](https://storage.googleapis.com/dm-adversarial-robustness/cifar100_linf_wrn70-16_cutmix_ddpm.npy), [pt](https://storage.googleapis.com/dm-adversarial-robustness/cifar100_linf_wrn70-16_cutmix_ddpm.pt)
 | CIFAR-100 | &#8467;<sub>&infin;</sub> | 8 / 255 | WRN-28-10 | &#x2717; | 62.41% | 32.06% | [jax](https://storage.googleapis.com/dm-adversarial-robustness/cifar100_linf_wrn28-10_cutmix_ddpm.npy), [pt](https://storage.googleapis.com/dm-adversarial-robustness/cifar100_linf_wrn28-10_cutmix_ddpm.pt)
+| CIFAR-100 | &#8467;<sub>&infin;</sub> | 8 / 255 | ResNet-18 | &#x2717; | 56.87% | 28.50% | [jax](https://storage.googleapis.com/dm-adversarial-robustness/cifar100_linf_resnet18_ddpm.npy), [pt](https://storage.googleapis.com/dm-adversarial-robustness/cifar100_linf_resnet18_ddpm.pt)
 
-### Using the model
+### Installing
 
-Once downloaded, a model can be evaluated (clean accuracy) by running the
-`eval.py` script in either the `jax` or `pytorch` folders. E.g.:
+The following has been tested using Python 3.9.2.
+Using `run.sh` will create and activate a virtualenv, install all necessary
+dependencies and run a test program to ensure that you can import all the
+modules.
+
+```
+# Run from the parent directory.
+sh adversarial_robustness/run.sh
+```
+
+To run the provided code, use this virtualenv:
+
+```
+source /tmp/adversarial_robustness_venv/bin/activate
+```
+
+You may want to edit `requirements.txt` before running `run.sh` if GPU support
+is needed (e.g., use `jaxline==0.1.67+cuda111`). See JAX's installation
+[instructions](https://github.com/google/jax#installation) for more details.
+
+### Using pre-trained models
+
+Once downloaded, a model can be evaluated by running the `eval.py` script in
+either the `jax` or `pytorch` folders. E.g.:
 
 ```
 cd jax
@@ -58,7 +83,47 @@ python3 eval.py \
   --ckpt=${PATH_TO_CHECKPOINT} --depth=70 --width=16 --dataset=cifar10
 ```
 
-## Generated datasets
+These models are also directly available within
+[RobustBench](https://github.com/RobustBench/robustbench#model-zoo-quick-tour)'s
+model zoo.
+
+### Training your own model
+
+We also provide a training pipeline that reproduces results from both
+publications. This pipeline uses [Jaxline](https://github.com/deepmind/jaxline)
+and is written using [JAX](https://github.com/google/jax) and
+[Haiku](https://github.com/deepmind/dm-haiku). To train a model, modify the
+configuration in the `get_config()` function of `jax/experiment.py` and issue
+the following command from within the virtualenv created above:
+
+```
+cd jax
+python3 train.py --config=experiment.py
+```
+
+The training pipeline can run with multiple worker machines and multiple devices
+(either GPU or TPU). See [Jaxline](https://github.com/deepmind/jaxline) for more
+details.
+
+We do not provide a PyTorch implementation of our training pipeline. However,
+you may find one on GitHub, e.g.,
+[adversarial_robustness_pytorch](https://github.com/imrahulr/adversarial_robustness_pytorch)
+(by Rahul Rade).
+
+## Datasets
+
+### Extracted dataset
+
+Gowal et al. (2020) use samples extracted from
+[TinyImages-80M](https://groups.csail.mit.edu/vision/TinyImages/).
+Unfortunately, since then, the official TinyImages-80M dataset has been
+withdrawn (due to the presence of offensive images). As such, we cannot provide
+a download link to our extrated data until we have manually verified that all
+extracted images are not offensive. If you want to reproduce our setup, consider
+the generated datasets below. We are also happy to help, so feel free to reach
+out to Sven Gowal directly.
+
+### Generated datasets
 
 Rebuffi et al. (2021) use samples generated by a Denoising Diffusion
 Probabilistic Model [(DDPM; Ho et al., 2020)](https://arxiv.org/abs/2006.11239)
@@ -82,8 +147,8 @@ labels = npzfile['label']
 
 ## Citing this work
 
-If you use this code, data or these models in your work, please cite the
-relevant accompanying paper:
+If you use this code (or any derived code), data or these models in your work,
+please cite the relevant accompanying paper:
 
 ```
 @article{gowal2020uncovering,
@@ -95,7 +160,7 @@ relevant accompanying paper:
 }
 ```
 
-or
+and/or
 
 ```
 @article{rebuffi2021fixing,
