@@ -117,3 +117,21 @@ def linear_interp_coeff(Ns):
 
 
 # (grid_points([2]*3)-1).reshape(-1,1,3)
+
+def mish(inputs):
+    return inputs * tf.math.tanh(tf.math.softplus(inputs))
+
+
+def raf1(x):
+  x2 = x*x
+  return x + x2 + tf.sin(x) + tf.exp(-x2/100)
+
+
+def get_activation(act_string):
+  if act_string == 'mish':
+    return mish
+  if act_string == 'raf1':
+    return raf1
+  else:
+    return eval(f'tf.nn.{act_string}')
+

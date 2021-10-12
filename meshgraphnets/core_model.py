@@ -20,7 +20,7 @@ import collections
 import functools
 import sonnet as snt
 import tensorflow.compat.v1 as tf
-from meshgraphnets.common import get_activation
+from my_libs.utils import get_activation
 
 
 EdgeSet = collections.namedtuple('EdgeSet', ['name', 'features', 'senders',
