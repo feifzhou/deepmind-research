@@ -45,19 +45,31 @@ def _rollout(model, initial_state, num_steps):
   return output.stack()
 
 
-def evaluate(model, inputs, **kwargs):
+def evaluate(model, inputs, num_steps=None, **kwargs):
   """Performs model rollouts and create stats."""
   initial_state = {k: v[0] for k, v in inputs.items()}
-  num_steps = inputs['cells'].shape[0]
+  predict = True
+  if num_steps is None:
+    num_steps = inputs['cells'].shape[0]
+    predict = False
   prediction = _rollout(model, initial_state, num_steps)
 
-  error = tf.reduce_mean((prediction - inputs['velocity'])**2, axis=-1)
-  scalars = {'mse_%d_steps' % horizon: tf.reduce_mean(error[1:horizon+1])
+  if predict:
+    scalars = {}
+    traj_ops = {
+        'faces': tf.repeat(inputs['cells'][0:1], num_steps, axis=0),
+        'mesh_pos': tf.repeat(inputs['mesh_pos'][0:1], num_steps, axis=0),
+        'gt_velocity': tf.constant([0.]),
+        'pred_velocity': prediction
+    }
+  else:
+    error = tf.reduce_mean((prediction - inputs['velocity'])**2, axis=-1)
+    scalars = {'mse_%d_steps' % horizon: tf.reduce_mean(error[1:horizon+1])
              for horizon in [1, 10, 20, 50, 100, 200]}
-  traj_ops = {
-      'faces': inputs['cells'],
-      'mesh_pos': inputs['mesh_pos'],
-      'gt_velocity': inputs['velocity'],
-      'pred_velocity': prediction
-  }
+    traj_ops = {
+        'faces': inputs['cells'],
+        'mesh_pos': inputs['mesh_pos'],
+        'gt_velocity': inputs['velocity'],
+        'pred_velocity': prediction
+    }
   return scalars, traj_ops

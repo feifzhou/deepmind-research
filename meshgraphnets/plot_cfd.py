@@ -63,7 +63,7 @@ def main(unused_argv):
   plt.rcParams['image.cmap'] = FLAGS.cmap
   with open(FLAGS.rollout_path, 'rb') as fp:
     rollout_data = pickle.load(fp)
-    has_GT = bool(rollout_data[0]['gt_velocity'][0])
+    has_GT = isinstance(rollout_data[0]['gt_velocity'][0], np.ndarray)
 
   if FLAGS.mirrory:
     fig, axs = plt.subplots(2, 2, figsize=(16*FLAGS.scale, 16*FLAGS.scale))
@@ -72,7 +72,7 @@ def main(unused_argv):
   axs = axs.flatten()
   plt.subplots_adjust(0,0,0.95, 0.95, -0.08, -0.08)
   skip = FLAGS.skip
-  num_steps = len(rollout_data[0]['gt_velocity'])
+  num_steps = len(rollout_data[0]['pred_velocity'])
   num_frames_per_rollout = (num_steps-1) // skip + 1
   num_frames = len(rollout_data) * num_frames_per_rollout
   cell_size = np.max(rollout_data[0]['mesh_pos'][0],0) - np.min(rollout_data[0]['mesh_pos'][0],0) + 1
