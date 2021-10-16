@@ -35,7 +35,7 @@ from meshgraphnets import dataset
 
 
 FLAGS = flags.FLAGS
-flags.DEFINE_enum('mode', 'train', ['train', 'eval'],
+flags.DEFINE_enum('mode', 'train', ['train', 'eval', 'predict'],
                   'Train model, or run evaluation.')
 flags.DEFINE_enum('model', None, ['cfd', 'cloth', 'NPS'],
                   'Select model to run.')
@@ -48,6 +48,7 @@ flags.DEFINE_enum('rollout_split', 'valid', ['train', 'test', 'valid'],
 flags.DEFINE_integer('num_rollouts', 10, 'No. of rollout trajectories')
 flags.DEFINE_enum('evaluator', None, ['cfd_eval', 'cloth_eval', 'amr_eval', 'featureevolve_eval', 'amr_featureevolve_eval'], 'Select rollout method.')
 flags.DEFINE_integer('num_training_steps', int(10e6), 'No. of training steps')
+flags.DEFINE_integer('num_predict_steps', int(100), 'No. of prediction steps')
 flags.DEFINE_integer('dim', 2, 'NPS dimension')
 flags.DEFINE_integer('nfeat_in', 1, 'nfeat_in')
 flags.DEFINE_integer('nfeat_out', -1, 'nfeat_out')
@@ -140,7 +141,7 @@ def learner(model, params, mesher=None):
   evaluator(model, params, 'valid', None, mesher)
 
 
-def evaluator(model, params, data_name, rollout_path, mesher=None, return_valid=False):
+def evaluator(model, params, data_name, rollout_path, mesher=None, return_valid=False, predict_steps=None):
   """Run a model rollout trajectory."""
   nvalid = 0
   for _ in tf.python_io.tf_record_iterator(f"{FLAGS.dataset_dir}/{data_name}.tfrecord"): nvalid += 1
@@ -149,7 +150,7 @@ def evaluator(model, params, data_name, rollout_path, mesher=None, return_valid=
   if return_valid:
     ds = ds.repeat(None)
   inputs = tf.data.make_one_shot_iterator(ds).get_next()
-  scalar_op, traj_ops = params['evaluator'].evaluate(model, inputs, mesher=mesher)
+  scalar_op, traj_ops = params['evaluator'].evaluate(model, inputs, mesher=mesher, num_steps=predict_steps)
   if return_valid:
     return scalar_op, nvalid
   try:
@@ -170,15 +171,17 @@ def evaluator(model, params, data_name, rollout_path, mesher=None, return_valid=
       trajectories.append(traj_data)
       # error = traj_data['pred_velocity'] - traj_data['gt_velocity']
       # mse_list.append((error**2).mean(axis=1))
-      error = [np.mean((traj_data['pred_velocity'][i] - traj_data['gt_velocity'][i])**2, axis=0) for i in range(len(traj_data['pred_velocity']))]
-      mse_list.append(error)
-      scalars.append(scalar_data)
-    for key in scalars[0]:
-      logging.info('%s: %g', key, np.mean([x[key] for x in scalars]))
-    print(f'RMSE   total {np.sqrt(np.mean(mse_list))}')
-    print(f' per_channel {np.sqrt(np.mean(mse_list,axis=(0,1)))}')
-    print(f'    per_step {np.sqrt(np.mean(mse_list,axis=(0,2)))}')
-    print(f'    per_traj {np.sqrt(np.mean(mse_list,axis=(1,2)))}')
+      if predict_steps is None:
+        error = [np.mean((traj_data['pred_velocity'][i] - traj_data['gt_velocity'][i])**2, axis=0) for i in range(len(traj_data['pred_velocity']))]
+        mse_list.append(error)
+        scalars.append(scalar_data)
+    if predict_steps is None:
+      for key in scalars[0]:
+        logging.info('%s: %g', key, np.mean([x[key] for x in scalars]))
+      print(f'RMSE   total {np.sqrt(np.mean(mse_list))}')
+      print(f' per_channel {np.sqrt(np.mean(mse_list,axis=(0,1)))}')
+      print(f'    per_step {np.sqrt(np.mean(mse_list,axis=(0,2)))}')
+      print(f'    per_traj {np.sqrt(np.mean(mse_list,axis=(1,2)))}')
     if rollout_path:
       with open(rollout_path, 'wb') as fp:
         pickle.dump(trajectories, fp)
@@ -246,6 +249,8 @@ def main(argv):
     learner(model, params, mesher)
   elif FLAGS.mode == 'eval':
     evaluator(model, params, FLAGS.rollout_split, FLAGS.rollout_path, mesher)
+  elif FLAGS.mode == 'predict':
+    evaluator(model, params, FLAGS.rollout_split, FLAGS.rollout_path, mesher, predict_steps=FLAGS.num_predict_steps)
 
 if __name__ == '__main__':
   app.run(main)

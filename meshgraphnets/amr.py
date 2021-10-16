@@ -302,7 +302,7 @@ class amr_state_variables:
         return tf.cast(mesh, tf.float32)*scale, \
           tf.gather_nd(type_all, mesh), \
           tf.gather_nd(field_all, mesh), \
-          tf.constant(0) if field_tgt is None else tf.gather_nd(field_tgt, mesh), \
+          tf.constant(0.) if field_tgt is None else tf.gather_nd(field_tgt, mesh), \
           self.get_valid_edges(mesh, mask_all, update=update)
 
 
@@ -318,10 +318,10 @@ class amr_state_variables:
         if input_dense:
             # simply reshape
             field_all = tf.reshape(field_inp, self.shape_all+(1,))
-            field_tgt = tf.reshape(field_tgt, self.shape_all+(1,))
+            field_tgt = tf.reshape(field_tgt, self.shape_all+(1,)) if field_tgt is not None else None
         else:
             field_all = self.update_field_from_graph(field_inp, mesh=mesh, update=False)
-            field_tgt = tf.transpose(tf.reshape(field_tgt, self.shape_all))[...,None]# if field_tgt is not None else field_tgt
+            field_tgt = tf.transpose(tf.reshape(field_tgt, self.shape_all))[...,None] if field_tgt is not None else None # if field_tgt is not None else field_tgt
         # ## field_tgt is always dense!!!
         # print(f'debug in remesh_input field_tgt {field_tgt}')
         # ## WARNING: temporary fix

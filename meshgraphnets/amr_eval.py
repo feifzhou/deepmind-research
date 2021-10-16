@@ -10,7 +10,7 @@ from meshgraphnets import amr
 # from meshgraphnets.common import NodeType
 
 
-def _rollout(model, initial_state, num_steps, mesher, field_gt):
+def _rollout(model, initial_state, num_steps, mesher, field_gt, return_gt=False):
   """Rolls out a model trajectory."""
   node_type = initial_state['node_type'][:, 0]
   # mask = tf.logical_or(tf.equal(node_type, NodeType.NORMAL),
@@ -22,11 +22,11 @@ def _rollout(model, initial_state, num_steps, mesher, field_gt):
     #     refine_index=refine_index, coarse_index=coarse_index, input_dense=False, index=True)
     # skip_mesh = lambda: (mesh, node_type, field, tf.gather_nd(tf.transpose(tf.reshape(field_gt[step],mesher.shape_all))[...,None],tf.cast(mesh,tf.int32)), edges, refine_index, coarse_index)
     def do_mesh():
-      return mesher.remesh_input(mesh, field, field_gt[step],
+      return mesher.remesh_input(mesh, field, field_gt[step] if return_gt else None,
         refine_index=refine_index, coarse_index=coarse_index, input_dense=False, index=True)
 
     def skip_mesh():
-      return (mesh, node_type, field, tf.gather_nd(tf.transpose(tf.reshape(field_gt[step],mesher.shape_all))[...,None],tf.cast(mesh,tf.int32)), edges, refine_index, coarse_index)
+      return (mesh, node_type, field, tf.gather_nd(tf.transpose(tf.reshape(field_gt[step],mesher.shape_all))[...,None],tf.cast(mesh,tf.int32)) if return_gt else tf.constant(0.), edges, refine_index, coarse_index)
 
     mesh, node_type, field, fgt, edges, refine_index, coarse_index =\
      tf.cond(tf.equal(step%mesher.eval_freq, 0), do_mesh, skip_mesh)
@@ -64,14 +64,20 @@ def _rollout(model, initial_state, num_steps, mesher, field_gt):
   return _read_fn(mesh_traj), _read_fn(field_traj), _read_fn(edge_traj), _read_fn(fgt_traj)
 
 
-def evaluate(model, inputs, mesher):
+def evaluate(model, inputs, mesher, num_steps=None):
   """Performs model rollouts and create stats."""
   initial_state = {k: v[0] for k, v in inputs.items()}
-  num_steps = inputs['cells'].shape[0]
-  mesh_traj, field_traj, edge_traj, fgt_traj = _rollout(model, initial_state, num_steps, mesher, inputs['velocity'])
+  predict = True
+  if num_steps is None:
+    num_steps = inputs['cells'].shape[0]
+    predict = False
+  mesh_traj, field_traj, edge_traj, fgt_traj = _rollout(model, initial_state, num_steps, mesher, inputs['velocity'], return_gt=not predict)
 
-  error = [tf.reduce_mean((field_traj[i] - fgt_traj[i])**2) for i in range(num_steps)]
-  scalars = {'mse_%d_steps' % horizon: tf.reduce_mean(error[1:horizon+1])
+  if predict:
+    scalars = {}
+  else:
+    error = [tf.reduce_mean((field_traj[i] - fgt_traj[i])**2) for i in range(num_steps)]
+    scalars = {'mse_%d_steps' % horizon: tf.reduce_mean(error[1:horizon+1])
              for horizon in [1, 10, 20, 50, 100, 200]}
   traj_ops = {
       'faces': edge_traj,
