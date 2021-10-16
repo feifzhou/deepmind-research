@@ -63,6 +63,7 @@ def main(unused_argv):
   plt.rcParams['image.cmap'] = FLAGS.cmap
   with open(FLAGS.rollout_path, 'rb') as fp:
     rollout_data = pickle.load(fp)
+    has_GT = bool(rollout_data[0]['gt_velocity'][0])
 
   if FLAGS.mirrory:
     fig, axs = plt.subplots(2, 2, figsize=(16*FLAGS.scale, 16*FLAGS.scale))
@@ -82,8 +83,8 @@ def main(unused_argv):
   for trajectory in rollout_data:
     # bb_min = trajectory['gt_velocity'].min(axis=(0, 1))
     # bb_max = trajectory['gt_velocity'].max(axis=(0, 1))
-    bb_min = np.concatenate(trajectory['gt_velocity']).min(axis=(0))
-    bb_max = np.concatenate(trajectory['gt_velocity']).max(axis=(0))
+    bb_min = np.concatenate(trajectory['gt_velocity' if has_GT else 'pred_velocity']).min(axis=(0))
+    bb_max = np.concatenate(trajectory['gt_velocity' if has_GT else 'pred_velocity']).max(axis=(0))
     bounds.append((bb_min, bb_max))
   # print(f'debug num_steps {num_steps} num_frames_per_rollout {num_frames_per_rollout} num_frames {num_frames}  cell_size {cell_size} cutoff {cutoff} bounds {bounds}')
 
@@ -98,6 +99,7 @@ def main(unused_argv):
     traj = num//num_frames_per_rollout
     for i, ax in enumerate(axs):
       col = i%2
+      if (not has_GT) and (col==0): continue
       ax.cla()
       ax.set_aspect('equal')
       ax.set_axis_off()
