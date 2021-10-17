@@ -62,6 +62,7 @@ flags.DEFINE_integer('n_evolve', -1, help='If >0, change core model to preproces
 flags.DEFINE_string('mlp_activation', 'relu', 'Activation in MLP, e.g. relu')
 flags.DEFINE_integer('batch', 4, 'batch size')
 flags.DEFINE_integer('keep_ckpt', -1, 'number of checkpoints to keep. -1 to default(5)')
+flags.DEFINE_integer('valid_freq', 10000, 'Perform validation/checkpoint every this many steps')
 flags.DEFINE_float('lr', 1e-4, 'learning rate')
 flags.DEFINE_integer('lr_decay', 5000000, help='Learning rate decay.')
 flags.DEFINE_enum('rotate', None, ['SO', 'cubic', ''], help='Data augmentation by pointgroup operation')
@@ -122,21 +123,27 @@ def learner(model, params, mesher=None):
                      lambda: tf.group(train_op))
   valid_op, nvalid = evaluator(model, params, 'valid', None, mesher, return_valid=True)
 
+  saver=tf.train.Saver(max_to_keep=5 if FLAGS.keep_ckpt<=0 else FLAGS.keep_ckpt)
   with tf.train.MonitoredTrainingSession(
       hooks=[tf.train.StopAtStepHook(last_step=FLAGS.num_training_steps)],
       checkpoint_dir=FLAGS.checkpoint_dir,
-      scaffold=tf.train.Scaffold(saver=tf.train.Saver(max_to_keep=20)) if FLAGS.keep_ckpt>0 else None,
-      save_checkpoint_secs=2400) as sess:
+      scaffold=None,save_checkpoint_steps=None,#tf.train.Scaffold(saver=tf.train.Saver(max_to_keep=20)) if FLAGS.keep_ckpt>0 else None,
+      save_checkpoint_secs=None) as sess:
+    best_valid = 1.0e99
 
     sess.run(ds_iterator.initializer)
     while not sess.should_stop():
       _, step, loss = sess.run([train_op, global_step, loss_op])
       if step % 1000 == 0:
         logging.info('Step %d: Loss %g', step, loss)
-      if step % 10000 == 0:
+      if step % FLAGS.valid_freq == 0:
         logging.info(f'Validating {nvalid}')
         validation_err = [list(sess.run([valid_op])[0].values()) for _ in range(nvalid)]
-        logging.info(f'  validation err {np.mean(validation_err,0)}')
+        valid_err_np = np.mean(validation_err,0)
+        logging.info(f' Step {step} validation err {valid_err_np}')
+        if valid_err_np[-1] < best_valid:
+          best_valid = valid_err_np[-1]
+          saver.save(sess._sess._sess._sess._sess, FLAGS.checkpoint_dir+'/model.ckpt', global_step=step)
     logging.info('Training complete.')
   evaluator(model, params, 'valid', None, mesher)
 
