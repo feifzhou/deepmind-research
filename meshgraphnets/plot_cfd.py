@@ -31,6 +31,7 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string('rollout_path', None, 'Path to rollout pickle file')
 flags.DEFINE_integer('skip', 1, 'skip timesteps between animation')
 flags.DEFINE_boolean('mirrory', False, 'Make mirror plots to better see periodic boundary condition along y')
+flags.DEFINE_integer('ichannel', 0, 'which channel to show')
 flags.DEFINE_boolean('label', True, 'show label')
 flags.DEFINE_boolean('mesh_tri', False, 'show mesh of triangulation')
 flags.DEFINE_boolean('mesh', False, 'show mesh, i.e. the edges')
@@ -112,7 +113,7 @@ def main(unused_argv):
         faces = None
       velocity = rollout_data[traj][['gt_velocity','pred_velocity'][col]][step]
       triang = mtri.Triangulation(pos[:, 0], pos[:, 1], faces)
-      f_plot = ax.tripcolor(triang, velocity[:, 0], vmin=vmin[0], vmax=vmax[0])
+      f_plot = ax.tripcolor(triang, velocity[:, FLAGS.ichannel], vmin=vmin[FLAGS.ichannel], vmax=vmax[FLAGS.ichannel])
       if FLAGS.mesh_tri: ax.triplot(triang, 'ko-', ms=0.5, lw=0.3)
       if FLAGS.label:
         ax.set_title('%s traj %d step %d' % (['GT','PD'][col], traj, step))
